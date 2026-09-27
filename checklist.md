@@ -1,9 +1,9 @@
 # secretbox 체크리스트
 
 ## 1단계 — 볼트 (암호화 저장소)
-- [ ] `src/vault.rs` 파일 형식 인코딩/디코딩 → verify: 라운드트립 테스트
-- [ ] 잘못된 패스프레이즈·변조된 헤더·변조된 본문 거부 → verify: 실패 테스트
-- [ ] 원자적 저장 (tmp + rename, 0600) → verify: 테스트
+- [x] `src/vault.rs` 파일 형식 인코딩/디코딩 → verify: 라운드트립 테스트
+- [x] 잘못된 패스프레이즈·변조된 헤더·변조된 본문 거부 → verify: 실패 테스트
+- [x] 원자적 저장 (tmp + rename, 0600) → verify: 테스트
 
 ## 2단계 — 관리 CLI
 - [ ] `init`, `set <name>`(tty 무에코 입력), `rm <name>`, `list`

@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
+chacha20poly1305 = { version = "0.11.0", features = ["alloc", "zeroize"] }
+getrandom = "0.4"
+libc = "0.2.189"
+rpassword = "7.5.4"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+zeroize = { version = "1.9.0", features = ["serde"] }
 
 # 가벼운 단일 바이너리
 [profile.release]

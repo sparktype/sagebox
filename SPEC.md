@@ -51,7 +51,7 @@ execve(argv, env)   ← 클라이언트 프로세스가 MCP 서버로 바뀜 (st
 - KDF: Argon2id, 기본 m=64 MiB, t=3, p=1. 파라미터는 헤더에 저장하므로 나중에 올릴 수 있다.
 - AEAD: XChaCha20-Poly1305. 앞의 헤더 전체(nonce 제외)를 AAD로 넣어 파라미터 변조를 막는다.
 - 평문: JSON `{"secrets": {이름: 값}, "profiles": {이름: {"command": [...], "env": {ENV: 비밀이름}}}}`.
-- 저장할 때마다 salt와 nonce를 새로 뽑는다.
+- salt는 `init` 때 한 번 정하고 유지한다. 데몬이 보관한 세션 키가 `set` 이후에도 유효해야 하기 때문이다. nonce는 저장할 때마다 새로 뽑는다.
 
 ## 기본 경로
 
