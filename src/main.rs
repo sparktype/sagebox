@@ -19,6 +19,7 @@ use vault::Result;
 
 const USAGE: &str = "usage: secretbox [--ns <namespace>] <command>
   secretbox ns
+  secretbox trust | untrust [dir]
   secretbox init
   secretbox set <name> [--expires YYYY-MM-DD]
   secretbox rm <name>
@@ -44,11 +45,13 @@ fn run(args: &[&str]) -> Result<()> {
     };
     let root = data_root()?;
     let cwd = std::env::current_dir()?;
-    let (name, source) = namespace::resolve(flag, std::env::var("SECRETBOX_NS").ok(), &cwd)?;
+    let (name, source, project) =
+        namespace::resolve(flag, std::env::var("SECRETBOX_NS").ok(), &cwd)?;
     let ns = Ns {
         dir: namespace::dir(&root, &name),
         name,
         source,
+        project,
     };
     create_private_dir(&ns.dir)?;
     let dir = &ns.dir;
@@ -60,6 +63,22 @@ fn run(args: &[&str]) -> Result<()> {
             Ok(())
         }
         ["init"] => admin::init(&vault),
+        ["trust"] => {
+            let dir = ns.project.as_ref().ok_or(
+                "trust needs a .secretbox file naming a non-default namespace in this directory or above",
+            )?;
+            admin::trust(&vault, dir)?;
+            println!("trusted {} for namespace {}", dir.display(), ns.name);
+            Ok(())
+        }
+        ["untrust"] => {
+            let dir = ns
+                .project
+                .as_ref()
+                .ok_or("no .secretbox project here; use `untrust <dir>`")?;
+            admin::untrust(&vault, &dir.display().to_string())
+        }
+        ["untrust", dir] => admin::untrust(&vault, dir),
         ["set", name] => admin::set(&vault, name, None),
         ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
         ["rm", name] => admin::rm(&vault, name),

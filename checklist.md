@@ -44,6 +44,8 @@
 - [x] `secretbox ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
 - [x] verify: 결정 순서·파싱·검증 단위 테스트, 두 네임스페이스 격리 통합 테스트
 
+- [x] 프로젝트 신뢰 등록 (`trust`/`untrust`, 볼트에 저장, 데몬이 검사)
+
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)

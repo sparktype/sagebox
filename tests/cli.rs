@@ -317,6 +317,26 @@ fn namespaces_are_isolated() {
         stderr(&sbx_in(&project, &home, "personal1\n", &["unlock"])).contains("wrong passphrase")
     );
     ok(sbx_in(&project, &home, "acmepass1\n", &["unlock"]));
+
+    // 풀려 있어도 신뢰 등록 전의 저장소 디렉터리는 거부된다.
+    let o = sbx_in(&project, &home, "", &["exec", "github"]);
+    assert!(stderr(&o).contains("is not trusted"), "{}", stderr(&o));
+    // 명시 인자(--ns)는 사용자가 쓴 설정이므로 신뢰 검사 대상이 아니다.
+    let o = sbx(&home, "", &["--ns", "acme", "exec", "github"]);
+    assert!(
+        stdout(&o).contains("GITHUB_TOKEN=acme_tok"),
+        "{}",
+        stderr(&o)
+    );
+    // 패스프레이즈 없이는(에이전트 스스로는) 신뢰 등록할 수 없다.
+    assert!(!sbx_in(&project, &home, "", &["trust"]).status.success());
+    let o = sbx_in(&project, &home, "acmepass1\n", &["trust"]);
+    assert!(
+        stdout(&o).contains("trusted ") && stdout(&o).contains("for namespace acme"),
+        "{}",
+        stderr(&o)
+    );
+
     let o = sbx_in(&project, &home, "", &["exec", "github"]);
     assert!(
         stdout(&o).contains("GITHUB_TOKEN=acme_tok"),
@@ -336,6 +356,19 @@ fn namespaces_are_isolated() {
     assert!(stderr(&o).contains("locked"), "{}", stderr(&o));
     assert!(stdout(&sbx_in(&project, &home, "", &["status"])).starts_with("acme: unlocked"));
 
+    // 저장소가 .secretbox를 다른 네임스페이스로 바꾸면 그쪽 신뢰 목록에는 없으므로 거부된다.
+    ok(sbx(
+        &home,
+        "otherpass\notherpass\n",
+        &["--ns", "other", "init"],
+    ));
+    ok(sbx(&home, "otherpass\n", &["--ns", "other", "unlock"]));
+    let _lock_other = LockOnDrop(home.clone(), "other");
+    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"other\"\n").unwrap();
+    let o = sbx_in(&project, &home, "", &["exec", "github"]);
+    assert!(stderr(&o).contains("is not trusted"), "{}", stderr(&o));
+    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"acme\"\n").unwrap();
+
     // 경로 탈출과 잘못된 이름은 거부한다.
     assert!(stderr(&sbx(&home, "", &["--ns", "../x", "list"])).contains("invalid namespace"));
 
@@ -344,7 +377,7 @@ fn namespaces_are_isolated() {
     let default_log = std::fs::read_to_string(home.join("audit.log")).unwrap();
     assert!(acme_log.contains("ok: gh") && !default_log.contains("ok: gh"));
 
-    drop((_lock_acme, _lock_default));
+    drop((_lock_acme, _lock_default, _lock_other));
     assert!(
         wait_until(|| !home.join("ns/acme/sock").exists()),
         "acme daemon still running"

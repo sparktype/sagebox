@@ -114,7 +114,8 @@ pub fn status(ns: &Ns) -> Result<()> {
 fn exec_request(ns: &Ns, profile: &str) -> Result<(UnixStream, Response)> {
     let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
     let profile = profile.into();
-    let resp = request(&mut s, &Request::Exec { profile })?;
+    let project = ns.project.as_ref().map(|p| p.display().to_string());
+    let resp = request(&mut s, &Request::Exec { profile, project })?;
     Ok((s, resp))
 }
 

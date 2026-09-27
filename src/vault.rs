@@ -1,5 +1,5 @@
 // 비밀과 프로필을 봉투 암호화(무작위 DEK + 키 슬롯)로 저장하는 볼트 파일 형식
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::Path;
 
@@ -29,9 +29,23 @@ pub struct Vault {
     /// 비밀 이름 → 만료일 `YYYY-MM-DD`(UTC). 없던 필드라 기존 볼트도 그대로 읽힌다.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub expires: BTreeMap<String, String>,
+    /// .secretbox 파일로 이 네임스페이스를 고를 수 있는 프로젝트 디렉터리(정규화 경로).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub trusted: BTreeSet<String>,
 }
 
 impl Vault {
+    /// 저장소 파일이 고른 요청이면 그 프로젝트가 신뢰 등록돼 있어야 한다.
+    pub fn check_project(&self, project: Option<&str>) -> Result<()> {
+        match project {
+            Some(dir) if !self.trusted.contains(dir) => Err(format!(
+                "project {dir} is not trusted for this namespace; run `secretbox trust` there (needs the namespace passphrase)"
+            )
+            .into()),
+            _ => Ok(()),
+        }
+    }
+
     /// names 중 now(Unix 초) 기준으로 만료된 비밀이 있으면 Err.
     pub fn check_expiry<'a>(
         &self,

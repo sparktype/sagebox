@@ -30,10 +30,17 @@ const MAX_MSG: usize = 1 << 20;
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Request {
-    Unlock { passphrase: Zeroizing<String> },
+    Unlock {
+        passphrase: Zeroizing<String>,
+    },
     Lock,
     Status,
-    Exec { profile: String },
+    Exec {
+        profile: String,
+        /// .secretbox로 네임스페이스가 정해졌을 때의 프로젝트 디렉터리
+        #[serde(default)]
+        project: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -273,12 +280,12 @@ impl Daemon {
                 st.idle_since = now;
                 Ok((Response::Ok, Next::Close))
             }
-            Request::Exec { profile } => {
+            Request::Exec { profile, project } => {
                 let Some(sess) = &st.session else {
                     self.audit(pid, "exec", Some(&profile), "denied: locked")?;
                     return Ok((Response::Locked, Next::Close));
                 };
-                let result = self.exec(&sess.dek, &profile);
+                let result = self.exec(&sess.dek, &profile, project.as_deref());
                 let outcome = match &result {
                     Ok((_, names)) => format!("ok: {}", names.join(",")),
                     Err(e) => format!("denied: {e}"),
@@ -320,8 +327,14 @@ impl Daemon {
     }
 
     /// 프로필의 명령과 환경변수, 그리고 감사 로그용 비밀 이름 목록.
-    fn exec(&self, dek: &Dek, profile: &str) -> Result<(Response, Vec<String>)> {
+    fn exec(
+        &self,
+        dek: &Dek,
+        profile: &str,
+        project: Option<&str>,
+    ) -> Result<(Response, Vec<String>)> {
         let (_, v) = vault::open(&std::fs::read(&self.vault)?, dek)?;
+        v.check_project(project)?;
         let p = v
             .profiles
             .get(profile)

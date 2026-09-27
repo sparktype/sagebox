@@ -131,6 +131,12 @@ pub fn list(path: &Path) -> Result<()> {
             None => println!("  {name}"),
         }
     }
+    if !v.trusted.is_empty() {
+        println!("trusted projects:");
+        for dir in &v.trusted {
+            println!("  {dir}");
+        }
+    }
     println!("profiles:");
     for (name, p) in &v.profiles {
         let env: Vec<String> = p.env.iter().map(|(k, s)| format!("{k}={s}")).collect();
@@ -167,6 +173,23 @@ pub fn profile_rm(path: &Path, name: &str) -> Result<()> {
         v.profiles
             .remove(name)
             .ok_or(format!("no profile named {name}"))?;
+        Ok(())
+    })
+}
+
+/// 이 네임스페이스의 패스프레이즈로 프로젝트 디렉터리를 신뢰 등록한다.
+pub fn trust(path: &Path, project: &Path) -> Result<()> {
+    edit(path, |v| {
+        v.trusted.insert(project.display().to_string());
+        Ok(())
+    })
+}
+
+pub fn untrust(path: &Path, project: &str) -> Result<()> {
+    edit(path, |v| {
+        if !v.trusted.remove(project) {
+            return Err(format!("{project} is not trusted").into());
+        }
         Ok(())
     })
 }
