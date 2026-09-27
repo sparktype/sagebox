@@ -247,6 +247,7 @@ impl Daemon {
             env.insert(var.clone(), value.clone());
         }
         let names = p.env.values().cloned().collect();
+        v.check_expiry(p.env.values(), vault::unix_now())?;
         let resp = Response::Exec {
             command: p.command.clone(),
             env,

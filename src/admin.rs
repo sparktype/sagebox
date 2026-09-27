@@ -77,7 +77,13 @@ pub fn init(path: &Path) -> Result<()> {
     vault::write_atomic(path, &file)
 }
 
-pub fn set(path: &Path, name: &str) -> Result<()> {
+/// expires가 없으면 기존 만료일을 지운다(새 값은 대개 새 토큰이기 때문이다).
+pub fn set(path: &Path, name: &str, expires: Option<&str>) -> Result<()> {
+    if let Some(date) = expires
+        && vault::parse_date(date)? <= vault::unix_now()
+    {
+        return Err(format!("expiry date {date} is not in the future").into());
+    }
     edit(path, |v| {
         let value = read_secret(&format!("value for {name}: "))?;
         // 환경변수 값에는 NUL이 들어갈 수 없어 exec 때 실패하므로 저장 시점에 막는다.
@@ -85,6 +91,10 @@ pub fn set(path: &Path, name: &str) -> Result<()> {
             return Err("secret value must not contain NUL bytes".into());
         }
         v.secrets.insert(name.into(), value);
+        match expires {
+            Some(date) => v.expires.insert(name.into(), date.into()),
+            None => v.expires.remove(name),
+        };
         Ok(())
     })
 }
@@ -103,6 +113,7 @@ pub fn rm(path: &Path, name: &str) -> Result<()> {
         v.secrets
             .remove(name)
             .ok_or(format!("no secret named {name}"))?;
+        v.expires.remove(name);
         Ok(())
     })
 }
@@ -111,8 +122,13 @@ pub fn rm(path: &Path, name: &str) -> Result<()> {
 pub fn list(path: &Path) -> Result<()> {
     let (_, v, _) = unlock(path)?;
     println!("secrets:");
+    let now = vault::unix_now();
     for name in v.secrets.keys() {
-        println!("  {name}");
+        match v.expires.get(name) {
+            Some(d) if v.check_expiry([name], now).is_err() => println!("  {name}  (EXPIRED {d})"),
+            Some(d) => println!("  {name}  (expires {d})"),
+            None => println!("  {name}"),
+        }
     }
     println!("profiles:");
     for (name, p) in &v.profiles {

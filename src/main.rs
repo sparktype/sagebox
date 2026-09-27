@@ -13,7 +13,7 @@ use vault::Result;
 
 const USAGE: &str = "usage:
   secretbox init
-  secretbox set <name>
+  secretbox set <name> [--expires YYYY-MM-DD]
   secretbox rm <name>
   secretbox list
   secretbox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
@@ -35,7 +35,8 @@ fn run(args: &[&str]) -> Result<()> {
     let vault = dir.join("vault");
     match args {
         ["init"] => admin::init(&vault),
-        ["set", name] => admin::set(&vault, name),
+        ["set", name] => admin::set(&vault, name, None),
+        ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
         ["rm", name] => admin::rm(&vault, name),
         ["list"] => admin::list(&vault),
         ["profile", "add", name, rest @ ..] => {

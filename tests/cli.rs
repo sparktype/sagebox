@@ -59,6 +59,14 @@ fn admin_flow() {
         "plaintext on disk"
     );
 
+    let o = sbx(&home, "", &["set", "gh", "--expires", "2020-01-01"]);
+    assert!(stderr(&o).contains("not in the future"));
+    let o = sbx(
+        &home,
+        "password\nghp_123\n",
+        &["set", "gh", "--expires", "2099-01-01"],
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
     let o = sbx(&home, "password\na\0b\n", &["set", "nul"]);
     assert!(stderr(&o).contains("NUL"));
     let o = sbx(
@@ -96,7 +104,7 @@ fn admin_flow() {
 
     let o = sbx(&home, "password\n", &["list"]);
     let out = String::from_utf8_lossy(&o.stdout);
-    assert!(out.contains("gh") && out.contains("github: [GITHUB_TOKEN=gh]"));
+    assert!(out.contains("gh  (expires 2099-01-01)") && out.contains("github: [GITHUB_TOKEN=gh]"));
     assert!(!out.contains("ghp_123"), "list must not print values");
 
     assert!(

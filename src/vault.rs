@@ -26,6 +26,59 @@ pub struct Vault {
     pub secrets: BTreeMap<String, Zeroizing<String>>,
     #[serde(default)]
     pub profiles: BTreeMap<String, Profile>,
+    /// 비밀 이름 → 만료일 `YYYY-MM-DD`(UTC). 없던 필드라 기존 볼트도 그대로 읽힌다.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub expires: BTreeMap<String, String>,
+}
+
+impl Vault {
+    /// names 중 now(Unix 초) 기준으로 만료된 비밀이 있으면 Err.
+    pub fn check_expiry<'a>(
+        &self,
+        names: impl IntoIterator<Item = &'a String>,
+        now: i64,
+    ) -> Result<()> {
+        for name in names {
+            if let Some(date) = self.expires.get(name)
+                && parse_date(date)? <= now
+            {
+                return Err(format!("secret {name} expired on {date}").into());
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `YYYY-MM-DD`를 그날 00:00 UTC의 Unix 초로 바꾼다. 그 시각부터 만료로 본다.
+pub fn parse_date(s: &str) -> Result<i64> {
+    let bad = || format!("invalid date {s:?} (expected YYYY-MM-DD)");
+    let b = s.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return Err(bad().into());
+    }
+    let num = |r: std::ops::Range<usize>| s[r].parse::<i64>().map_err(|_| bad());
+    let (y, m, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
+    let (ny, nm) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+    if !(1..=12).contains(&m) || d < 1 || d > days_from_civil(ny, nm, 1) - days_from_civil(y, m, 1)
+    {
+        return Err(bad().into());
+    }
+    Ok(days_from_civil(y, m, d) * 86_400)
+}
+
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// 1970-01-01부터의 일수 (Howard Hinnant의 days_from_civil).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -308,6 +361,32 @@ mod tests {
         assert_eq!(h2.slots[1], foreign);
         assert_eq!(*h2.slots[1].unwrap(&[7; 32]).unwrap(), *dek);
         assert_eq!(*h2.unlock_passphrase(b"correct horse").unwrap(), *dek);
+    }
+
+    #[test]
+    fn dates_and_expiry() {
+        assert_eq!(parse_date("1970-01-01").unwrap(), 0);
+        assert_eq!(parse_date("2000-03-01").unwrap(), 951_868_800);
+        assert_eq!(parse_date("2024-02-29").unwrap(), 1_709_164_800);
+        assert_eq!(parse_date("2026-09-28").unwrap(), 1_790_553_600);
+        for bad in [
+            "2025-02-29",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-9-28",
+            "tomorrow",
+            "2026-04-31",
+        ] {
+            assert!(parse_date(bad).is_err(), "{bad}");
+        }
+        let mut v = Vault::default();
+        v.expires.insert("gh".into(), "2026-09-28".into());
+        let names = ["gh".to_string(), "other".to_string()];
+        assert!(v.check_expiry(&names, 1_790_553_599).is_ok());
+        assert!(v.check_expiry(&names, 1_790_553_600).is_err());
+        // 예전 형식(expires 없음)도 읽힌다.
+        let old: Vault = serde_json::from_str(r#"{"secrets":{},"profiles":{}}"#).unwrap();
+        assert!(old.expires.is_empty());
     }
 
     #[cfg(unix)]
