@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<!-- secretbox 현재 구현(아키텍처·exec 시퀀스·볼트 봉투 형식)을 그린 다이어그램 페이지 -->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>secretbox 구현 다이어그램</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-soft:    #7a8399;
+      --color-accent:  #eb6c36;
+      --font-sans:     'Geist', 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif KR', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1200px; margin: 0 auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 0.75rem;
+    }
+    .lede { color: var(--color-muted); font-size: 0.95rem; line-height: 1.6; max-width: 60rem; margin-bottom: 3rem; }
+    section { margin-bottom: 4rem; }
+    h2 {
+      font-family: var(--font-serif);
+      font-size: 1.5rem;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      margin-bottom: 1rem;
+    }
+    .scroll { overflow-x: auto; }
+    svg { width: 100%; min-width: 900px; display: block; }
+    .caption { color: var(--color-muted); font-size: 0.9rem; line-height: 1.6; max-width: 60rem; margin-top: 1rem; }
+    .caption code { font-family: var(--font-mono); font-size: 0.82rem; }
+    footer {
+      border-top: 1px solid rgba(45,49,66,0.12);
+      padding-top: 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      letter-spacing: 0.06em;
+      color: var(--color-soft);
+    }
+
+    /* SVG 텍스트 역할 */
+    svg .nm   { font-family: var(--font-sans); font-size: 12px; font-weight: 600; fill: #2d3142; }
+    svg .nmL  { font-family: var(--font-sans); font-size: 14px; font-weight: 600; fill: #2d3142; }
+    svg .sub  { font-family: var(--font-mono); font-size: 9px; fill: #4f5d75; }
+    svg .tag  { font-family: var(--font-mono); font-size: 7px; letter-spacing: 0.08em; }
+    svg .lbl  { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.06em; fill: #7a8399; }
+    svg .zl   { font-family: var(--font-mono); font-size: 7px; letter-spacing: 0.14em; fill: rgba(45,49,66,0.55); }
+    svg .leg  { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.1em; fill: #4f5d75; }
+    svg .eye  { font-family: var(--font-mono); font-size: 8px; letter-spacing: 0.14em; fill: #4f5d75; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">secretbox · implementation · 2026-09-28</p>
+    <h1>secretbox 현재 구현</h1>
+    <p class="lede">에이전트가 MCP 서버를 띄울 때만 비밀을 환경변수로 주입하는 로컬 데몬입니다. 볼트(SBX2), 관리 CLI, Unix 데몬과 <code>exec</code>까지 구현된 상태를 세 장으로 나눠 그렸습니다.</p>
+
+    <!-- ───────────────────────── ① 아키텍처 ───────────────────────── -->
+    <section>
+      <p class="eyebrow">01 · Architecture · trust boundary</p>
+      <h2>구성 요소와 신뢰 경계</h2>
+      <div class="scroll">
+      <svg viewBox="0 0 1280 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">secretbox 아키텍처와 신뢰 경계</title>
+        <desc id="arch-desc">같은 사용자 계정 안에서 관리 CLI는 패스프레이즈로 볼트를 직접 편집하고, 데몬은 세션 키만 들고 exec 클라이언트에 명령과 환경변수를 넘기며, 클라이언트는 execve로 MCP 서버가 되고, 다른 UID의 접속은 거부된다.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- zones -->
+        <rect x="200" y="72" width="1056" height="504" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="216" y="76" width="128" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="zl" x="280" y="85" text-anchor="middle">SAME UID · USER SESSION</text>
+
+        <rect x="968" y="88" width="264" height="448" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
+        <rect x="984" y="92" width="108" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="zl" x="1038" y="101" text-anchor="middle">~/.SECRETBOX · 0700</text>
+
+        <!-- arrows (before nodes) -->
+        <!-- 사용자 → 관리 CLI -->
+        <path d="M 400,148 H 478" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="410" y="128" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="440" y="137" text-anchor="middle">PASSPHRASE</text>
+        <!-- 관리 CLI → 볼트 -->
+        <path d="M 640,148 H 1002" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="784" y="128" width="72" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="820" y="137" text-anchor="middle">SEAL · WRITE</text>
+        <!-- 사용자 → 데몬 (unlock) -->
+        <path d="M 360,176 V 224 Q 360,232 368,232 H 824 Q 832,232 832,240 V 286" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="648" y="212" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="680" y="221" text-anchor="middle">UNLOCK · PW</text>
+        <!-- 에이전트 → exec -->
+        <path d="M 400,324 H 478" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="424" y="304" width="32" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="440" y="313" text-anchor="middle">SPAWN</text>
+        <!-- exec → 데몬 (request) -->
+        <path d="M 640,316 H 742" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="670" y="296" width="44" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="692" y="305" text-anchor="middle">REQUEST</text>
+        <!-- 데몬 → exec (return) -->
+        <path d="M 744,336 H 642" fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="662" y="344" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="692" y="353" text-anchor="middle">ARGV + ENV</text>
+        <!-- 데몬 → 볼트 (read) -->
+        <path d="M 920,308 H 1096 Q 1104,308 1104,300 V 178" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="968" y="288" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="297" text-anchor="middle">READ · OPEN</text>
+        <!-- 데몬 → 감사 로그 -->
+        <path d="M 920,340 H 1096 Q 1104,340 1104,348 V 454" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="982" y="348" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="357" text-anchor="middle">APPEND</text>
+        <!-- exec → MCP (execve, headline) -->
+        <path d="M 560,352 V 454" fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <rect x="568" y="396" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="586" y="405" text-anchor="middle">EXECVE</text>
+        <!-- 다른 UID → 경계에서 차단 -->
+        <path d="M 144,484 H 190" fill="none" stroke="#2d3142" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <line x1="192" y1="474" x2="192" y2="494" stroke="#2d3142" stroke-width="2"/>
+        <rect x="148" y="464" width="36" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="166" y="473" text-anchor="middle">DENIED</text>
+
+        <!-- nodes -->
+        <!-- 사용자 (input) -->
+        <rect x="240" y="120" width="160" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="240" y="120" width="160" height="56" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="248" y="126" width="28" height="12" rx="2" fill="none" stroke="rgba(122,131,153,0.5)" stroke-width="0.8"/>
+        <text class="tag" x="262" y="135" text-anchor="middle" fill="#7a8399">USER</text>
+        <text class="nm" x="320" y="150" text-anchor="middle">사용자</text>
+        <text class="sub" x="320" y="166" text-anchor="middle">terminal · passphrase</text>
+
+        <!-- AI 에이전트 (input) -->
+        <rect x="240" y="296" width="160" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="240" y="296" width="160" height="56" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <rect x="248" y="302" width="32" height="12" rx="2" fill="none" stroke="rgba(122,131,153,0.5)" stroke-width="0.8"/>
+        <text class="tag" x="264" y="311" text-anchor="middle" fill="#7a8399">AGENT</text>
+        <text class="nm" x="320" y="326" text-anchor="middle">AI 에이전트</text>
+        <text class="sub" x="320" y="342" text-anchor="middle">Claude Code · Codex</text>
+
+        <!-- 관리 CLI -->
+        <rect x="480" y="120" width="160" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="480" y="120" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="488" y="126" width="24" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text class="tag" x="500" y="135" text-anchor="middle" fill="rgba(45,49,66,0.8)">CLI</text>
+        <text class="nm" x="560" y="150" text-anchor="middle">관리 CLI</text>
+        <text class="sub" x="560" y="166" text-anchor="middle">init · set · rm · profile</text>
+
+        <!-- exec 클라이언트 -->
+        <rect x="480" y="296" width="160" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="480" y="296" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="488" y="302" width="24" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text class="tag" x="500" y="311" text-anchor="middle" fill="rgba(45,49,66,0.8)">CLI</text>
+        <text class="nm" x="560" y="326" text-anchor="middle">exec 클라이언트</text>
+        <text class="sub" x="560" y="342" text-anchor="middle">secretbox exec &lt;profile&gt;</text>
+
+        <!-- MCP 서버 -->
+        <rect x="480" y="456" width="160" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="480" y="456" width="160" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="488" y="462" width="28" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text class="tag" x="502" y="471" text-anchor="middle" fill="rgba(45,49,66,0.8)">PROC</text>
+        <text class="nm" x="560" y="486" text-anchor="middle">MCP 서버</text>
+        <text class="sub" x="560" y="502" text-anchor="middle">pinned argv · env ← secrets</text>
+
+        <!-- 데몬 (focal) -->
+        <rect x="744" y="288" width="176" height="72" rx="6" fill="#f5f5f5"/>
+        <rect x="744" y="288" width="176" height="72" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+        <rect x="752" y="294" width="40" height="12" rx="2" fill="none" stroke="rgba(235,108,54,0.5)" stroke-width="0.8"/>
+        <text class="tag" x="772" y="303" text-anchor="middle" fill="#eb6c36">DAEMON</text>
+        <text class="nm" x="832" y="322" text-anchor="middle">secretbox 데몬</text>
+        <text class="sub" x="832" y="338" text-anchor="middle">holds DEK only · sock 0600</text>
+        <text class="sub" x="832" y="352" text-anchor="middle">idle 30m · max 8h</text>
+
+        <!-- 볼트 (store) -->
+        <rect x="1004" y="120" width="200" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="1004" y="120" width="200" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="1012" y="126" width="32" height="12" rx="2" fill="none" stroke="rgba(79,93,117,0.45)" stroke-width="0.8"/>
+        <text class="tag" x="1028" y="135" text-anchor="middle" fill="#4f5d75">STORE</text>
+        <text class="nm" x="1104" y="150" text-anchor="middle">볼트</text>
+        <text class="sub" x="1104" y="166" text-anchor="middle">vault · SBX2 · 0600</text>
+
+        <!-- 감사 로그 (store) -->
+        <rect x="1004" y="456" width="200" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="1004" y="456" width="200" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <rect x="1012" y="462" width="32" height="12" rx="2" fill="none" stroke="rgba(79,93,117,0.45)" stroke-width="0.8"/>
+        <text class="tag" x="1028" y="471" text-anchor="middle" fill="#4f5d75">STORE</text>
+        <text class="nm" x="1104" y="486" text-anchor="middle">감사 로그</text>
+        <text class="sub" x="1104" y="502" text-anchor="middle">audit.log · JSONL · no values</text>
+
+        <!-- 다른 UID (external) -->
+        <rect x="32" y="456" width="112" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="32" y="456" width="112" height="56" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+        <rect x="40" y="462" width="24" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.30)" stroke-width="0.8"/>
+        <text class="tag" x="52" y="471" text-anchor="middle" fill="rgba(45,49,66,0.6)">EXT</text>
+        <text class="nm" x="88" y="486" text-anchor="middle">다른 UID</text>
+        <text class="sub" x="88" y="502" text-anchor="middle">peer uid ≠ euid</text>
+
+        <!-- legend -->
+        <line x1="32" y1="608" x2="1248" y2="608" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text class="leg" x="32" y="636">LEGEND</text>
+        <rect x="112" y="627" width="16" height="12" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+        <text class="leg" x="136" y="636">FOCAL</text>
+        <rect x="208" y="627" width="16" height="12" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text class="leg" x="232" y="636">PROCESS</text>
+        <rect x="320" y="627" width="16" height="12" rx="2" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text class="leg" x="344" y="636">FILE</text>
+        <rect x="408" y="627" width="16" height="12" rx="2" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text class="leg" x="432" y="636">ACTOR</text>
+        <line x1="504" y1="633" x2="532" y2="633" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <text class="leg" x="540" y="636">CALL</text>
+        <line x1="600" y1="633" x2="628" y2="633" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <text class="leg" x="636" y="636">RETURN</text>
+        <line x1="712" y1="633" x2="740" y2="633" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+        <text class="leg" x="748" y="636">SECRET HANDOFF</text>
+        <line x1="872" y1="633" x2="896" y2="633" stroke="#2d3142" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <line x1="898" y1="626" x2="898" y2="640" stroke="#2d3142" stroke-width="2"/>
+        <text class="leg" x="908" y="636">BLOCKED</text>
+        <rect x="984" y="627" width="16" height="12" rx="2" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,4"/>
+        <text class="leg" x="1008" y="636">TRUST BOUNDARY</text>
+      </svg>
+      </div>
+      <p class="caption">관리 CLI는 데몬을 거치지 않고 패스프레이즈로 볼트를 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트는 정책을 바꿀 수 없습니다. 에이전트가 고를 수 있는 것은 프로필 이름뿐이고, 명령(argv)은 볼트 안의 프로필에 고정돼 있습니다. <code>execve</code> 이후에는 같은 프로세스가 MCP 서버가 되어 에이전트와 stdio로 대화합니다. 비밀은 그 프로세스의 환경변수에만 존재합니다. 같은 UID 안의 악의적인 프로세스는 격리하지 않습니다(SPEC.md의 위협 모델 참고).</p>
+    </section>
+
+    <!-- ───────────────────────── ② 시퀀스 ───────────────────────── -->
+    <section>
+      <p class="eyebrow">02 · Sequence · unlock → exec</p>
+      <h2>세션 잠금 해제부터 execve까지</h2>
+      <div class="scroll">
+      <svg viewBox="0 0 1280 700" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-title seq-desc">
+        <title id="seq-title">unlock에서 exec까지의 메시지 순서</title>
+        <desc id="seq-desc">사용자가 데몬을 잠금 해제하면 데몬이 Argon2id로 DEK를 얻고, 에이전트가 띄운 exec 클라이언트가 요청하면 세션이 유효할 때 데몬이 볼트를 열어 감사 로그를 남긴 뒤 명령과 환경변수를 돌려주어 클라이언트가 execve로 MCP 서버가 되며, 잠겼거나 만료됐으면 오류를 돌려준다.</desc>
+        <defs>
+          <marker id="s-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="s-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="s-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+          <marker id="s-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- lifelines -->
+        <line x1="160" y1="104" x2="160" y2="624" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="400" y1="104" x2="400" y2="624" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="640" y1="104" x2="640" y2="624" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="880" y1="104" x2="880" y2="624" stroke="rgba(235,108,54,0.45)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="1120" y1="104" x2="1120" y2="624" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+
+        <!-- alt frame -->
+        <rect x="376" y="344" width="768" height="268" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <rect x="376" y="344" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <text class="lbl" x="396" y="356" text-anchor="middle" style="fill:#4f5d75;letter-spacing:0.12em">ALT</text>
+        <text class="lbl" x="424" y="356" style="fill:#4f5d75;letter-spacing:0.04em">[unlocked · not expired]</text>
+        <line x1="384" y1="552" x2="1136" y2="552" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text class="lbl" x="388" y="572" style="fill:#4f5d75;letter-spacing:0.04em">[locked · expired]</text>
+
+        <!-- activation bars -->
+        <rect x="876" y="140" width="8" height="116" fill="rgba(235,108,54,0.15)" stroke="rgba(235,108,54,0.6)" stroke-width="0.8"/>
+        <rect x="636" y="288" width="8" height="252" fill="rgba(79,93,117,0.15)" stroke="rgba(79,93,117,0.6)" stroke-width="0.8"/>
+        <rect x="876" y="320" width="8" height="284" fill="rgba(235,108,54,0.15)" stroke="rgba(235,108,54,0.6)" stroke-width="0.8"/>
+
+        <!-- m1 unlock -->
+        <line x1="160" y1="148" x2="874" y2="148" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="248" y="128" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="280" y="137" text-anchor="middle">UNLOCK · PW</text>
+        <!-- m2 read vault -->
+        <line x1="884" y1="180" x2="1118" y2="180" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="970" y="160" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="169" text-anchor="middle">READ VAULT</text>
+        <!-- m3 self: KDF -->
+        <path d="M 884,196 H 912 Q 920,196 920,204 V 212 Q 920,220 912,220 H 886" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="928" y="202" width="80" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="932" y="211">ARGON2ID → DEK</text>
+        <!-- m5 ok -->
+        <line x1="876" y1="252" x2="162" y2="252" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow)"/>
+        <rect x="246" y="232" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="280" y="241" text-anchor="middle">OK · SESSION</text>
+        <!-- m6 spawn -->
+        <line x1="400" y1="292" x2="634" y2="292" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="488" y="272" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="520" y="281" text-anchor="middle">EXEC GITHUB</text>
+        <!-- m7 request -->
+        <line x1="644" y1="324" x2="874" y2="324" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="736" y="304" width="48" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="313" text-anchor="middle">OP: EXEC</text>
+        <!-- m8 open -->
+        <line x1="884" y1="400" x2="1118" y2="400" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="974" y="380" width="52" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="389" text-anchor="middle">OPEN(DEK)</text>
+        <!-- m9 audit (async) -->
+        <line x1="884" y1="432" x2="1118" y2="432" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow-open)"/>
+        <rect x="970" y="412" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="421" text-anchor="middle">AUDIT · OK</text>
+        <!-- m10 argv + env (headline) -->
+        <line x1="876" y1="464" x2="646" y2="464" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#s-arrow-accent)"/>
+        <rect x="730" y="444" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="453" text-anchor="middle" style="fill:#eb6c36">ARGV + ENV</text>
+        <!-- m11 self: execve -->
+        <path d="M 644,480 H 672 Q 680,480 680,488 V 496 Q 680,504 672,504 H 646" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <rect x="688" y="486" width="68" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="692" y="495">EXECVE → MCP</text>
+        <!-- m12 stdio (async) -->
+        <line x1="636" y1="532" x2="402" y2="532" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow-open)"/>
+        <rect x="490" y="512" width="60" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="520" y="521" text-anchor="middle">MCP · STDIO</text>
+        <!-- m13 error -->
+        <line x1="876" y1="596" x2="646" y2="596" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow)"/>
+        <rect x="728" y="576" width="64" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="585" text-anchor="middle">ERR: LOCKED</text>
+
+        <!-- actors -->
+        <rect x="80" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="80" y="56" width="160" height="48" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text class="nm" x="160" y="78" text-anchor="middle">사용자</text>
+        <text class="sub" x="160" y="94" text-anchor="middle">secretbox unlock</text>
+
+        <rect x="320" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="320" y="56" width="160" height="48" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text class="nm" x="400" y="78" text-anchor="middle">AI 에이전트</text>
+        <text class="sub" x="400" y="94" text-anchor="middle">MCP host</text>
+
+        <rect x="560" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="560" y="56" width="160" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text class="nm" x="640" y="78" text-anchor="middle">exec 클라이언트</text>
+        <text class="sub" x="640" y="94" text-anchor="middle">→ MCP server process</text>
+
+        <rect x="800" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="800" y="56" width="160" height="48" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+        <text class="nm" x="880" y="78" text-anchor="middle">secretbox 데몬</text>
+        <text class="sub" x="880" y="94" text-anchor="middle">session: DEK</text>
+
+        <rect x="1040" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="1040" y="56" width="160" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text class="nm" x="1120" y="78" text-anchor="middle">볼트 · 감사 로그</text>
+        <text class="sub" x="1120" y="94" text-anchor="middle">~/.secretbox</text>
+
+        <!-- legend -->
+        <line x1="32" y1="648" x2="1248" y2="648" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text class="leg" x="32" y="676">LEGEND</text>
+        <line x1="112" y1="673" x2="140" y2="673" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#s-arrow)"/>
+        <text class="leg" x="148" y="676">CALL</text>
+        <line x1="208" y1="673" x2="236" y2="673" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow)"/>
+        <text class="leg" x="244" y="676">RETURN</text>
+        <line x1="320" y1="673" x2="348" y2="673" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#s-arrow-open)"/>
+        <text class="leg" x="356" y="676">ASYNC</text>
+        <line x1="424" y1="673" x2="452" y2="673" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#s-arrow-accent)"/>
+        <text class="leg" x="460" y="676">SECRET HANDOFF</text>
+        <rect x="584" y="667" width="8" height="12" fill="rgba(79,93,117,0.15)" stroke="rgba(79,93,117,0.6)" stroke-width="0.8"/>
+        <text class="leg" x="600" y="676">ACTIVE</text>
+      </svg>
+      </div>
+      <p class="caption">데몬은 요청이 올 때마다 만료를 확인하고, 요청이 없어도 30초마다 확인해 만료된 DEK를 지웁니다. 만료 조건은 유휴 30분 또는 잠금 해제 후 8시간이고, 절전 중에도 시간이 흐르도록 벽시계로 잽니다. 감사 로그를 쓰지 못하면 <code>ARGV + ENV</code>를 보내지 않습니다. 메시지는 연결 하나에 하나씩 JSON으로 주고받고, 쓰기 방향 shutdown으로 끝을 알립니다.</p>
+    </section>
+
+    <!-- ───────────────────────── ③ 봉투 형식 ───────────────────────── -->
+    <section>
+      <p class="eyebrow">03 · Layer stack · envelope encryption</p>
+      <h2>볼트 봉투 형식 (SBX2)</h2>
+      <div class="scroll">
+      <svg viewBox="0 0 1280 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="env-title env-desc">
+        <title id="env-title">SBX2 볼트의 키 계층과 파일 배치</title>
+        <desc id="env-desc">패스프레이즈에서 Argon2id로 KEK를 얻고, KEK로 슬롯의 DEK를 풀고, DEK로 본문을 복호화해 비밀과 프로필을 얻으며, 파일은 매직·길이·헤더 JSON·nonce·암호문 순서이고 앞의 세 부분이 본문의 AAD로 인증된다.</desc>
+        <defs>
+          <marker id="e-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="e-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="e-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <!-- direction indicator -->
+        <text class="eye" x="144" y="92" text-anchor="middle">UNLOCK</text>
+        <line x1="144" y1="104" x2="144" y2="394" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#e-arrow)"/>
+
+        <!-- stack silhouette + layers -->
+        <rect x="200" y="80" width="920" height="320" rx="6" fill="#ffffff" stroke="#4f5d75" stroke-width="1"/>
+        <!-- L3 focal band -->
+        <rect x="200.5" y="208" width="919" height="64" fill="rgba(235,108,54,0.08)"/>
+        <rect x="200" y="208" width="920" height="64" fill="none" stroke="#eb6c36" stroke-width="1.2"/>
+        <line x1="200" y1="144" x2="1120" y2="144" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+        <line x1="200" y1="336" x2="1120" y2="336" stroke="rgba(45,49,66,0.12)" stroke-width="1"/>
+
+        <!-- L1 -->
+        <text class="eye" x="220" y="116">01 · INPUT</text>
+        <text class="nmL" x="340" y="117">패스프레이즈</text>
+        <text class="sub" x="1100" y="110" text-anchor="end">human memory · never on disk</text>
+        <text class="sub" x="1100" y="124" text-anchor="end">admin CLI · unlock</text>
+        <!-- L2 -->
+        <text class="eye" x="220" y="180">02 · SLOT</text>
+        <text class="nmL" x="340" y="181">KEK · 슬롯별 키</text>
+        <text class="sub" x="1100" y="174" text-anchor="end">passphrase: Argon2id(salt 16B · m=64MiB t=3 p=1)</text>
+        <text class="sub" x="1100" y="188" text-anchor="end">next: secure_enclave · fido2 · tpm2 → same 32B KEK</text>
+        <!-- L3 -->
+        <text class="eye" x="220" y="244" style="fill:#eb6c36">03 · SESSION</text>
+        <text class="nmL" x="340" y="245">DEK · 데이터 키</text>
+        <text class="sub" x="1100" y="238" text-anchor="end">unwrap = XChaCha20-Poly1305(KEK, AAD = kind + params)</text>
+        <text class="sub" x="1100" y="252" text-anchor="end">32B random · the only key the daemon holds · zeroized on lock</text>
+        <!-- L4 -->
+        <text class="eye" x="220" y="308">04 · BODY</text>
+        <text class="nmL" x="340" y="309">볼트 본문</text>
+        <text class="sub" x="1100" y="302" text-anchor="end">XChaCha20-Poly1305(DEK, fresh 24B nonce per save)</text>
+        <text class="sub" x="1100" y="316" text-anchor="end">AAD = magic + len + header JSON</text>
+        <!-- L5 -->
+        <text class="eye" x="220" y="372">05 · PLAIN</text>
+        <text class="nmL" x="340" y="373">비밀 · 프로필</text>
+        <text class="sub" x="1100" y="366" text-anchor="end">{secrets: name → Zeroizing&lt;String&gt;,</text>
+        <text class="sub" x="1100" y="380" text-anchor="end">profiles: name → {command[], env{VAR: secret}}}</text>
+
+        <!-- file layout strip -->
+        <text class="eye" x="200" y="460">FILE LAYOUT · ~/.SECRETBOX/VAULT</text>
+        <rect x="200" y="476" width="64" height="40" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text class="sub" x="232" y="500" text-anchor="middle">SBX2</text>
+        <rect x="264" y="476" width="64" height="40" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text class="sub" x="296" y="500" text-anchor="middle">len u32</text>
+        <rect x="328" y="476" width="400" height="40" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+        <text class="sub" x="528" y="500" text-anchor="middle">header JSON · slots[kind, params, nonce, wrapped DEK]</text>
+        <rect x="728" y="476" width="120" height="40" fill="#ffffff" stroke="#4f5d75" stroke-width="1"/>
+        <text class="sub" x="788" y="500" text-anchor="middle">nonce 24B</text>
+        <rect x="848" y="476" width="272" height="40" fill="#ffffff" stroke="#4f5d75" stroke-width="1"/>
+        <text class="sub" x="984" y="500" text-anchor="middle">ciphertext + tag</text>
+
+        <!-- AAD bracket -->
+        <path d="M 200,528 V 536 H 728 V 528" fill="none" stroke="#4f5d75" stroke-width="1"/>
+        <text class="lbl" x="464" y="556" text-anchor="middle">AAD · TAMPERING ANY HEADER BYTE FAILS BODY DECRYPTION</text>
+        <path d="M 848,528 V 536 H 1120 V 528" fill="none" stroke="#4f5d75" stroke-width="1"/>
+        <text class="lbl" x="984" y="556" text-anchor="middle">LAYER 04</text>
+      </svg>
+      </div>
+      <p class="caption">슬롯은 모두 32바이트 KEK를 얻어 같은 DEK를 푸는 방식이라, 하드웨어 슬롯을 추가해도 본문은 다시 암호화하지 않습니다. 모르는 <code>kind</code>의 슬롯은 해석하지 않고 그대로 보존합니다. 그래서 macOS에서 추가한 슬롯이 Linux에서 저장할 때 지워지지 않습니다. 패스프레이즈 슬롯은 항상 존재하며 복구 경로 역할을 합니다.</p>
+    </section>
+
+    <footer>secretbox · commit a569210 · src/vault.rs · src/admin.rs · src/daemon.rs · src/client.rs</footer>
+  </div>
+</body>
+</html>
