@@ -7,6 +7,27 @@ use zeroize::Zeroizing;
 
 use crate::vault::{self, Dek, Header, Profile, Result, Vault};
 
+/// 볼트 파일은 같은 UID면 복사해 오프라인 대입 공격을 할 수 있으므로 길이 하한을 둔다.
+const MIN_PASSPHRASE: usize = 8;
+/// 프로필이 덮어쓰면 실행 환경이 깨지는 변수. `LD_*`·`DYLD_*` 로더 변수는 접두어로 따로 막는다.
+const RESERVED_ENV: &[&str] = &[
+    "PATH", "HOME", "USER", "SHELL", "PWD", "OLDPWD", "TERM", "LANG", "IFS", "LC_ALL", "LC_CTYPE",
+];
+
+/// POSIX 이름(`[A-Za-z_][A-Za-z0-9_]*`)이고 예약 변수가 아니어야 한다.
+fn check_env_name(name: &str) -> Result<()> {
+    let mut chars = name.chars();
+    let valid = matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if !valid {
+        return Err(format!("invalid environment variable name: {name:?}").into());
+    }
+    if RESERVED_ENV.contains(&name) || name.starts_with("LD_") || name.starts_with("DYLD_") {
+        return Err(format!("refusing to override reserved variable {name}").into());
+    }
+    Ok(())
+}
+
 /// 터미널이면 에코 없이 묻고, 파이프면 stdin에서 한 줄 읽는다.
 pub(crate) fn read_secret(prompt: &str) -> Result<Zeroizing<String>> {
     let mut s = if std::io::stdin().is_terminal() {
@@ -46,6 +67,9 @@ pub fn init(path: &Path) -> Result<()> {
         return Err(format!("{} already exists", path.display()).into());
     }
     let pass = read_secret("new passphrase: ")?;
+    if pass.chars().count() < MIN_PASSPHRASE {
+        return Err(format!("passphrase must be at least {MIN_PASSPHRASE} characters").into());
+    }
     if *read_secret("repeat passphrase: ")? != *pass {
         return Err("passphrases do not match".into());
     }
@@ -56,6 +80,10 @@ pub fn init(path: &Path) -> Result<()> {
 pub fn set(path: &Path, name: &str) -> Result<()> {
     edit(path, |v| {
         let value = read_secret(&format!("value for {name}: "))?;
+        // 환경변수 값에는 NUL이 들어갈 수 없어 exec 때 실패하므로 저장 시점에 막는다.
+        if value.contains('\0') {
+            return Err("secret value must not contain NUL bytes".into());
+        }
         v.secrets.insert(name.into(), value);
         Ok(())
     })
@@ -105,6 +133,9 @@ pub fn profile_add(
         Some(bin) if Path::new(bin).is_absolute() => {}
         _ => return Err("command must start with an absolute path".into()),
     }
+    for var in env.keys() {
+        check_env_name(var)?;
+    }
     edit(path, |v| {
         if let Some(missing) = env.values().find(|s| !v.secrets.contains_key(*s)) {
             return Err(format!("no secret named {missing}").into());
@@ -121,4 +152,29 @@ pub fn profile_rm(path: &Path, name: &str) -> Result<()> {
             .ok_or(format!("no profile named {name}"))?;
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_env_name;
+
+    #[test]
+    fn env_names() {
+        for ok in ["GITHUB_TOKEN", "_X", "a1"] {
+            assert!(check_env_name(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "",
+            "1X",
+            "A-B",
+            "A B",
+            "A=B",
+            "PATH",
+            "HOME",
+            "LD_PRELOAD",
+            "DYLD_INSERT_LIBRARIES",
+        ] {
+            assert!(check_env_name(bad).is_err(), "{bad}");
+        }
+    }
 }
