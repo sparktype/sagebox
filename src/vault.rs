@@ -35,7 +35,8 @@ pub struct Vault {
 }
 
 impl Vault {
-    /// 저장소 파일이 고른 요청이면 그 프로젝트가 신뢰 등록돼 있어야 한다.
+    /// 저장소 파일이 고른 요청이면 그 프로젝트가 신뢰 등록돼 있어야 한다. 데몬(Unix 전용)만 쓴다.
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub fn check_project(&self, project: Option<&str>) -> Result<()> {
         match project {
             Some(dir) if !self.trusted.contains(dir) => Err(format!(
