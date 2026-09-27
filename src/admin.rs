@@ -5,6 +5,7 @@ use std::path::Path;
 
 use zeroize::Zeroizing;
 
+use crate::audit;
 use crate::vault::{self, Dek, Header, Profile, Result, Vault};
 
 /// 볼트 파일은 같은 UID면 복사해 오프라인 대입 공격을 할 수 있으므로 길이 하한을 둔다.
@@ -168,6 +169,27 @@ pub fn profile_rm(path: &Path, name: &str) -> Result<()> {
             .ok_or(format!("no profile named {name}"))?;
         Ok(())
     })
+}
+
+/// 패스프레이즈로 감사 키를 얻어 audit.log의 MAC 체인을 검증한다.
+pub fn audit_verify(vault_path: &Path, audit_path: &Path) -> Result<()> {
+    let (_, _, dek) = unlock(vault_path)?;
+    let r = audit::verify(audit_path, &audit::derive_key(&dek)?)?;
+    println!(
+        "{} verified, {} unauthenticated (written before the daemon's first unlock)",
+        r.verified, r.unauthenticated
+    );
+    if r.problems.is_empty() {
+        return Ok(());
+    }
+    for p in &r.problems {
+        println!("  {p}");
+    }
+    Err(format!(
+        "audit log failed verification ({} problems)",
+        r.problems.len()
+    )
+    .into())
 }
 
 #[cfg(test)]

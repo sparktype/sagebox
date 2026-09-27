@@ -21,6 +21,11 @@
 - [ ] Linux 실기 검증 (`SO_PEERCRED` 경로는 컴파일·clippy만 통과, 실행은 안 해 봄)
 - [ ] 데몬 자동 시작 (launchd / systemd user unit)
 
+## 3.5단계 — secretctl 흡수
+- [x] 환경변수 이름·예약 변수·NUL 값·패스프레이즈 길이 검증
+- [x] 비밀 만료일 (`set --expires`, exec 거부, list 표시)
+- [x] 감사 로그 MAC 체인 + `audit verify`
+
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)

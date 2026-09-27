@@ -207,6 +207,23 @@ fn daemon_session_and_exec() {
         0o600
     );
 
+    // 첫 unlock 전 2줄(exec locked, unlock 실패)은 MAC이 없고, 이후 5줄은 체인에 들어간다.
+    let o = sbx(&home, "password\n", &["audit", "verify"]);
+    assert!(
+        stdout(&o).contains("5 verified, 2 unauthenticated"),
+        "{}{}",
+        stdout(&o),
+        stderr(&o)
+    );
+    assert!(o.status.success());
+    let log = home.join("audit.log");
+    let tampered = std::fs::read_to_string(&log)
+        .unwrap()
+        .replace("ok: gh", "ok: xx");
+    std::fs::write(&log, tampered).unwrap();
+    let o = sbx(&home, "password\n", &["audit", "verify"]);
+    assert!(!o.status.success() && stdout(&o).contains("MAC mismatch"));
+
     drop(_d);
     std::fs::remove_dir_all(&home).unwrap();
 }

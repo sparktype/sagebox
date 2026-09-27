@@ -1,5 +1,6 @@
 // 에이전트에게 비밀 정보를 안전하게 전달하는 secretbox 데몬 진입점
 mod admin;
+mod audit;
 #[cfg(unix)]
 mod client;
 #[cfg(unix)]
@@ -16,6 +17,7 @@ const USAGE: &str = "usage:
   secretbox set <name> [--expires YYYY-MM-DD]
   secretbox rm <name>
   secretbox list
+  secretbox audit verify
   secretbox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   secretbox profile rm <name>
   secretbox daemon
@@ -39,6 +41,7 @@ fn run(args: &[&str]) -> Result<()> {
         ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
         ["rm", name] => admin::rm(&vault, name),
         ["list"] => admin::list(&vault),
+        ["audit", "verify"] => admin::audit_verify(&vault, &dir.join("audit.log")),
         ["profile", "add", name, rest @ ..] => {
             let (env, command) = parse_profile_args(rest)?;
             admin::profile_add(&vault, name, env, command)

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 secretbox is a personal secret-management daemon for AI agents: agents fetch passwords/API keys on demand over a local, authenticated channel and use them for MCP servers or skills. Requirements and design decisions live in `SPEC.md` — read it before implementing a feature, and update it (move items from "설계 초안"/"열린 질문" to "확정된 요구사항") when a decision is made.
 
-Status: vault file format (`src/vault.rs`, envelope encryption: random DEK + key slots) the admin CLI (`src/admin.rs`), and the Unix daemon (`src/daemon.rs`) + client (`src/client.rs`: unlock/lock/status/exec) are done. Next: hardware key slots (see `checklist.md`). Progress is tracked in `checklist.md`, decision rationale in `context-notes.md`. `docs/diagrams/architecture.html` has architecture / sequence / envelope-format diagrams; update it when the flow changes.
+Status: vault file format (`src/vault.rs`, envelope encryption: random DEK + key slots) the admin CLI (`src/admin.rs`), the Unix daemon (`src/daemon.rs`) + client (`src/client.rs`: unlock/lock/status/exec), and the MAC-chained audit log (`src/audit.rs`, `secretbox audit verify`) are done. Next: hardware key slots (see `checklist.md`). Progress is tracked in `checklist.md`, decision rationale in `context-notes.md`. `docs/diagrams/architecture.html` has architecture / sequence / envelope-format diagrams; update it when the flow changes.
 
 ## Commands
 

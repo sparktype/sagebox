@@ -2,16 +2,17 @@
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::audit::{self, AuditLog};
 use crate::vault::{self, Dek, Header, Result};
 
 const IDLE_TTL: Duration = Duration::from_secs(30 * 60);
@@ -132,7 +133,7 @@ fn peer(s: &UnixStream) -> Result<(u32, i32)> {
 
 struct Daemon {
     vault: PathBuf,
-    audit: PathBuf,
+    audit_log: Mutex<AuditLog>,
     session: Arc<Mutex<Option<Session>>>,
 }
 
@@ -147,7 +148,7 @@ pub fn serve(dir: &Path) -> Result<()> {
 
     let d = Daemon {
         vault: dir.join("vault"),
-        audit: dir.join("audit.log"),
+        audit_log: Mutex::new(AuditLog::new(dir.join("audit.log"))),
         session: Arc::new(Mutex::new(None)),
     };
     let session = d.session.clone();
@@ -191,6 +192,13 @@ impl Daemon {
             }
             Request::Unlock { passphrase } => {
                 let result = self.unlock(passphrase.as_bytes());
+                if let Ok(dek) = &result {
+                    // 첫 unlock부터 감사 로그에 MAC 체인을 건다. 키는 lock 뒤에도 유지된다.
+                    self.audit_log
+                        .lock()
+                        .unwrap()
+                        .set_key(audit::derive_key(dek)?)?;
+                }
                 let outcome = match &result {
                     Ok(_) => "ok".to_string(),
                     Err(e) => format!("denied: {e}"),
@@ -239,6 +247,7 @@ impl Daemon {
             .profiles
             .get(profile)
             .ok_or(format!("no profile named {profile}"))?;
+        v.check_expiry(p.env.values(), vault::unix_now())?;
         let mut env = BTreeMap::new();
         for (var, name) in &p.env {
             let value = v.secrets.get(name).ok_or(format!(
@@ -247,7 +256,6 @@ impl Daemon {
             env.insert(var.clone(), value.clone());
         }
         let names = p.env.values().cloned().collect();
-        v.check_expiry(p.env.values(), vault::unix_now())?;
         let resp = Response::Exec {
             command: p.command.clone(),
             env,
@@ -255,19 +263,10 @@ impl Daemon {
         Ok((resp, names))
     }
 
-    /// JSON Lines로 한 줄씩 추가한다. 비밀 값은 절대 넣지 않는다.
+    /// 비밀 값은 절대 넣지 않는다.
     fn audit(&self, pid: i32, op: &str, profile: Option<&str>, result: &str) -> Result<()> {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        let line = serde_json::json!({"ts": ts, "pid": pid, "op": op, "profile": profile, "result": result});
-        let mut f = std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .mode(0o600)
-            .open(&self.audit)?;
-        writeln!(f, "{line}")?;
-        Ok(())
+        let line = serde_json::json!({"ts": vault::unix_now(), "pid": pid, "op": op, "profile": profile, "result": result});
+        self.audit_log.lock().unwrap().append(line)
     }
 }
 
@@ -294,6 +293,7 @@ fn status(session: &Option<Session>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::UNIX_EPOCH;
 
     const MIN: Duration = Duration::from_secs(60);
 
