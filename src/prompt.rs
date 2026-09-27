@@ -7,8 +7,8 @@ use crate::vault::Result;
 
 /// 대화상자를 띄워 패스프레이즈를 받는다. 취소하거나 쓸 수 있는 도구가 없으면 Err.
 pub fn ask(message: &str) -> Result<Zeroizing<String>> {
-    if std::env::var_os("SECRETBOX_NO_GUI").is_some() {
-        return Err("GUI prompt disabled by SECRETBOX_NO_GUI".into());
+    if std::env::var_os("SAGEVAULT_NO_GUI").is_some() {
+        return Err("GUI prompt disabled by SAGEVAULT_NO_GUI".into());
     }
     #[cfg(target_os = "macos")]
     return osascript(message);
@@ -21,13 +21,13 @@ pub fn ask(message: &str) -> Result<Zeroizing<String>> {
             if let Some(r) = run(Command::new("zenity").args([
                 "--entry",
                 "--hide-text",
-                "--title=secretbox",
+                "--title=sagevault",
                 &format!("--text={message}"),
             ])) {
                 return r;
             }
             if let Some(r) =
-                run(Command::new("kdialog").args(["--title", "secretbox", "--password", message]))
+                run(Command::new("kdialog").args(["--title", "sagevault", "--password", message]))
             {
                 return r;
             }
@@ -40,7 +40,7 @@ pub fn ask(message: &str) -> Result<Zeroizing<String>> {
 fn osascript(message: &str) -> Result<Zeroizing<String>> {
     let quoted = message.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!(
-        r#"display dialog "{quoted}" default answer "" with hidden answer with title "secretbox" with icon caution giving up after 120"#
+        r#"display dialog "{quoted}" default answer "" with hidden answer with title "sagevault" with icon caution giving up after 120"#
     );
     run(Command::new("osascript").args(["-e", &script, "-e", "text returned of result"]))
         .unwrap_or_else(|| Err("osascript not available".into()))
@@ -79,7 +79,7 @@ fn pinentry(message: &str) -> Result<Zeroizing<String>> {
         .spawn()
         .map_err(|_| "no GUI prompt available (install zenity, kdialog or pinentry)")?;
     let script = format!(
-        "SETTITLE secretbox\nSETDESC {}\nSETPROMPT Passphrase:\nGETPIN\nBYE\n",
+        "SETTITLE sagevault\nSETDESC {}\nSETPROMPT Passphrase:\nGETPIN\nBYE\n",
         enc(message)
     );
     child

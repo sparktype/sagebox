@@ -29,7 +29,7 @@ pub struct Vault {
     /// 비밀 이름 → 만료일 `YYYY-MM-DD`(UTC). 없던 필드라 기존 볼트도 그대로 읽힌다.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub expires: BTreeMap<String, String>,
-    /// .secretbox 파일로 이 네임스페이스를 고를 수 있는 프로젝트 디렉터리(정규화 경로).
+    /// .sagevault 파일로 이 네임스페이스를 고를 수 있는 프로젝트 디렉터리(정규화 경로).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub trusted: BTreeSet<String>,
 }
@@ -40,7 +40,7 @@ impl Vault {
     pub fn check_project(&self, project: Option<&str>) -> Result<()> {
         match project {
             Some(dir) if !self.trusted.contains(dir) => Err(format!(
-                "project {dir} is not trusted for this namespace; run `secretbox trust` there (needs the namespace passphrase)"
+                "project {dir} is not trusted for this namespace; run `sgv trust` there (needs the namespace passphrase)"
             )
             .into()),
             _ => Ok(()),
@@ -211,7 +211,7 @@ impl Header {
     /// 파일에서 헤더를 읽는다. 두 번째 값은 본문 AAD의 길이(MAGIC부터 헤더 끝까지)다.
     pub fn parse(file: &[u8]) -> Result<(Header, usize)> {
         if file.get(..4) != Some(MAGIC) {
-            return Err("not a secretbox vault".into());
+            return Err("not a sagevault vault".into());
         }
         let len = u32::from_le_bytes(file.get(4..8).ok_or("truncated")?.try_into()?) as usize;
         let end = 8usize.checked_add(len).ok_or("truncated")?;

@@ -1,4 +1,4 @@
-# secretbox 체크리스트
+# sagevault 체크리스트
 
 ## 1단계 — 볼트 (암호화 저장소)
 - [x] `src/vault.rs` 파일 형식 인코딩/디코딩 → verify: 라운드트립 테스트
@@ -16,7 +16,7 @@
 - [x] `unlock` / `lock` / `status`
 - [x] `exec <profile>`: 요청 → argv/env 수신 → execve
 - [x] 감사 로그 (JSON Lines)
-- [x] verify: `secretbox exec` 로 `env` 를 고정한 테스트 프로필이 값을 받는지, 잠금 상태에서 거부되는지
+- [x] verify: `sgv exec` 로 `env` 를 고정한 테스트 프로필이 값을 받는지, 잠금 상태에서 거부되는지
 
 - [ ] Linux 실기 검증 (`SO_PEERCRED` 경로는 컴파일·clippy만 통과, 실행은 안 해 봄)
 
@@ -29,19 +29,19 @@
 - [x] IPC를 길이 접두 방식으로 바꾸기 (exec 연결을 임대로 열어 둬야 하므로 EOF framing 불가)
 - [x] 데몬: 연결별 스레드, 임대 계수, 종료 정책(임대 0 + 30초 / 첫 임대 대기 10분 / 잠김 2분 / 절대 8시간), 종료 시 DEK 삭제·소켓 제거·프로세스 종료
 - [x] 클라이언트: 데몬 자동 기동(double fork + setsid), 임대 fd의 CLOEXEC 해제 후 execve
-- [x] 잠김 상태 exec → GUI 프롬프트(macOS osascript, Linux zenity/kdialog/pinentry), `SECRETBOX_NO_GUI`
+- [x] 잠김 상태 exec → GUI 프롬프트(macOS osascript, Linux zenity/kdialog/pinentry), `SAGEVAULT_NO_GUI`
 - [x] `lock` → 데몬 종료, `status`에 활성 임대 수 표시
 - [x] verify: 종료 정책 단위 테스트, 통합 테스트(자동 기동, 임대 증감, lock 시 소켓 제거)
 - [x] ~~데몬 자동 시작 (launchd / systemd)~~ → 임대 방식으로 대체
 
-- [ ] GUI 프롬프트 실기 확인 (macOS 대화상자 입력, Linux zenity/kdialog/pinentry). 자동 테스트는 `SECRETBOX_NO_GUI`로 끔
+- [ ] GUI 프롬프트 실기 확인 (macOS 대화상자 입력, Linux zenity/kdialog/pinentry). 자동 테스트는 `SAGEVAULT_NO_GUI`로 끔
 
 ## 3.7단계 — 프로젝트별 네임스페이스 (보안 격리)
-- [x] 네임스페이스마다 볼트·패스프레이즈·데몬(소켓)·감사 로그를 분리한다. default는 기존 `~/.secretbox`, 이름 있는 것은 `~/.secretbox/ns/<name>/`
-- [x] 결정 순서: `--ns` > `SECRETBOX_NS` > 상위 탐색한 `.secretbox` 파일(`namespace = "acme"`) > default
+- [x] 네임스페이스마다 볼트·패스프레이즈·데몬(소켓)·감사 로그를 분리한다. default는 기존 `~/.sagevault`, 이름 있는 것은 `~/.sagevault/ns/<name>/`
+- [x] 결정 순서: `--ns` > `SAGEVAULT_NS` > 상위 탐색한 `.sagevault` 파일(`namespace = "acme"`) > default
 - [x] 이름 검증 `[a-z0-9][a-z0-9_-]{0,31}` (경로 탈출 방지, 소켓 경로 길이 제한)
 - [x] 자동 기동 데몬에 네임스페이스 전달, GUI 프롬프트·status에 네임스페이스와 프로젝트 표시
-- [x] `secretbox ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
+- [x] `sgv ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
 - [x] verify: 결정 순서·파싱·검증 단위 테스트, 두 네임스페이스 격리 통합 테스트
 
 - [x] 프로젝트 신뢰 등록 (`trust`/`untrust`, 볼트에 저장, 데몬이 검사)

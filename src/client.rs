@@ -56,9 +56,9 @@ fn spawn_daemon(ns: &str) -> Result<()> {
 /// 이 네임스페이스를 푸는 명령. default가 아니면 --ns를 붙인다.
 fn unlock_hint(ns: &Ns) -> String {
     if ns.name == namespace::DEFAULT {
-        "secretbox unlock".into()
+        "sgv unlock".into()
     } else {
-        format!("secretbox --ns {} unlock", ns.name)
+        format!("sgv --ns {} unlock", ns.name)
     }
 }
 
@@ -119,7 +119,7 @@ fn exec_request(ns: &Ns, profile: &str) -> Result<(UnixStream, Response)> {
     Ok((s, resp))
 }
 
-/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .secretbox가 다른 네임스페이스를
+/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .sagevault가 다른 네임스페이스를
 /// 요청할 수 있으므로, 사용자가 판단하도록 네임스페이스·프로젝트 경로·요청한 부모 프로세스를 보여 준다.
 fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
     let parent = Command::new("ps")
@@ -139,7 +139,7 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         "namespace \"{}\" to run profile \"{profile}\"\nproject: {project}\nrequested by: {parent}",
         ns.name
     );
-    let mut message = format!("Unlock secretbox {what}");
+    let mut message = format!("Unlock sagevault {what}");
     let mut last = None;
     for _ in 0..3 {
         let passphrase = prompt::ask(&message)
@@ -147,7 +147,7 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         match unlock_with(ns, passphrase) {
             Ok(()) => return Ok(()),
             Err(e) => {
-                message = format!("Wrong passphrase. Unlock secretbox {what}");
+                message = format!("Wrong passphrase. Unlock sagevault {what}");
                 last = Some(e);
             }
         }

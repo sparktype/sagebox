@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- secretbox 현재 구현(아키텍처·exec 시퀀스·볼트 봉투 형식)을 그린 다이어그램 페이지 -->
+<!-- sagevault 현재 구현(아키텍처·exec 시퀀스·볼트 봉투 형식)을 그린 다이어그램 페이지 -->
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>secretbox 구현 다이어그램</title>
+  <title>sagevault 구현 다이어그램</title>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -77,8 +77,8 @@
 </head>
 <body>
   <div class="frame">
-    <p class="eyebrow">secretbox · implementation · 2026-09-28</p>
-    <h1>secretbox 현재 구현</h1>
+    <p class="eyebrow">sagevault · implementation · 2026-09-28</p>
+    <h1>sagevault 현재 구현</h1>
     <p class="lede">에이전트가 MCP 서버를 띄울 때만 비밀을 환경변수로 주입하는 로컬 데몬입니다. 볼트(SBX2), 관리 CLI, Unix 데몬과 <code>exec</code>까지 구현된 상태를 세 장으로 나눠 그렸습니다.</p>
 
     <!-- ───────────────────────── ① 아키텍처 ───────────────────────── -->
@@ -87,7 +87,7 @@
       <h2>구성 요소와 신뢰 경계</h2>
       <div class="scroll">
       <svg viewBox="0 0 1280 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
-        <title id="arch-title">secretbox 아키텍처와 신뢰 경계</title>
+        <title id="arch-title">sagevault 아키텍처와 신뢰 경계</title>
         <desc id="arch-desc">같은 사용자 계정 안에서 관리 CLI는 패스프레이즈로 볼트를 직접 편집하고, 데몬은 세션 키만 들고 exec 클라이언트에 명령과 환경변수를 넘기며, 클라이언트는 execve로 MCP 서버가 되고, 다른 UID의 접속은 거부된다.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
@@ -103,7 +103,7 @@
 
         <rect x="968" y="88" width="264" height="448" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.12)" stroke-width="0.8"/>
         <rect x="984" y="92" width="108" height="12" rx="2" fill="#f5f5f5"/>
-        <text class="zl" x="1038" y="101" text-anchor="middle">~/.SECRETBOX · 0700</text>
+        <text class="zl" x="1038" y="101" text-anchor="middle">~/.SAGEVAULT · 0700</text>
 
         <!-- arrows (before nodes) -->
         <!-- 사용자 → 관리 CLI -->
@@ -179,7 +179,7 @@
         <rect x="488" y="302" width="24" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
         <text class="tag" x="500" y="311" text-anchor="middle" fill="rgba(45,49,66,0.8)">CLI</text>
         <text class="nm" x="560" y="326" text-anchor="middle">exec 클라이언트</text>
-        <text class="sub" x="560" y="342" text-anchor="middle">secretbox exec &lt;profile&gt;</text>
+        <text class="sub" x="560" y="342" text-anchor="middle">sgv exec &lt;profile&gt;</text>
 
         <!-- MCP 서버 -->
         <rect x="480" y="456" width="160" height="56" rx="6" fill="#f5f5f5"/>
@@ -194,7 +194,7 @@
         <rect x="744" y="288" width="176" height="72" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
         <rect x="752" y="294" width="40" height="12" rx="2" fill="none" stroke="rgba(235,108,54,0.5)" stroke-width="0.8"/>
         <text class="tag" x="772" y="303" text-anchor="middle" fill="#eb6c36">DAEMON</text>
-        <text class="nm" x="832" y="322" text-anchor="middle">secretbox 데몬</text>
+        <text class="nm" x="832" y="322" text-anchor="middle">sagevault 데몬</text>
         <text class="sub" x="832" y="338" text-anchor="middle">holds DEK only · sock 0600</text>
         <text class="sub" x="832" y="352" text-anchor="middle">leases · grace 30s · max 8h</text>
 
@@ -246,7 +246,7 @@
         <text class="leg" x="1008" y="636">TRUST BOUNDARY</text>
       </svg>
       </div>
-      <p class="caption">관리 CLI는 데몬을 거치지 않고 패스프레이즈로 볼트를 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트는 정책을 바꿀 수 없습니다. 에이전트가 고를 수 있는 것은 프로필 이름뿐이고, 명령(argv)은 볼트 안의 프로필에 고정돼 있습니다. <code>execve</code> 이후에는 같은 프로세스가 MCP 서버가 되어 에이전트와 stdio로 대화합니다. 비밀은 그 프로세스의 환경변수에만 존재합니다. 같은 UID 안의 악의적인 프로세스는 격리하지 않습니다(SPEC.md의 위협 모델 참고). 프로젝트별 네임스페이스를 쓰면 이 그림 전체(데몬, 볼트, 감사 로그)가 <code>~/.secretbox/ns/&lt;name&gt;/</code>마다 한 벌씩 따로 존재하므로, 한 프로젝트를 풀어도 다른 프로젝트는 잠긴 채로 남습니다.</p>
+      <p class="caption">관리 CLI는 데몬을 거치지 않고 패스프레이즈로 볼트를 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트는 정책을 바꿀 수 없습니다. 에이전트가 고를 수 있는 것은 프로필 이름뿐이고, 명령(argv)은 볼트 안의 프로필에 고정돼 있습니다. <code>execve</code> 이후에는 같은 프로세스가 MCP 서버가 되어 에이전트와 stdio로 대화합니다. 비밀은 그 프로세스의 환경변수에만 존재합니다. 같은 UID 안의 악의적인 프로세스는 격리하지 않습니다(SPEC.md의 위협 모델 참고). 프로젝트별 네임스페이스를 쓰면 이 그림 전체(데몬, 볼트, 감사 로그)가 <code>~/.sagevault/ns/&lt;name&gt;/</code>마다 한 벌씩 따로 존재하므로, 한 프로젝트를 풀어도 다른 프로젝트는 잠긴 채로 남습니다.</p>
     </section>
 
     <!-- ───────────────────────── ② 시퀀스 ───────────────────────── -->
@@ -338,7 +338,7 @@
         <rect x="80" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
         <rect x="80" y="56" width="160" height="48" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
         <text class="nm" x="160" y="78" text-anchor="middle">사용자</text>
-        <text class="sub" x="160" y="94" text-anchor="middle">secretbox unlock</text>
+        <text class="sub" x="160" y="94" text-anchor="middle">sgv unlock</text>
 
         <rect x="320" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
         <rect x="320" y="56" width="160" height="48" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
@@ -352,13 +352,13 @@
 
         <rect x="800" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
         <rect x="800" y="56" width="160" height="48" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
-        <text class="nm" x="880" y="78" text-anchor="middle">secretbox 데몬</text>
+        <text class="nm" x="880" y="78" text-anchor="middle">sagevault 데몬</text>
         <text class="sub" x="880" y="94" text-anchor="middle">session: DEK</text>
 
         <rect x="1040" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
         <rect x="1040" y="56" width="160" height="48" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <text class="nm" x="1120" y="78" text-anchor="middle">볼트 · 감사 로그</text>
-        <text class="sub" x="1120" y="94" text-anchor="middle">~/.secretbox</text>
+        <text class="sub" x="1120" y="94" text-anchor="middle">~/.sagevault</text>
 
         <!-- legend -->
         <line x1="32" y1="648" x2="1248" y2="648" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
@@ -432,7 +432,7 @@
         <text class="sub" x="1100" y="380" text-anchor="end">profiles: name → {command[], env{VAR: secret}}}</text>
 
         <!-- file layout strip -->
-        <text class="eye" x="200" y="460">FILE LAYOUT · ~/.SECRETBOX/VAULT</text>
+        <text class="eye" x="200" y="460">FILE LAYOUT · ~/.SAGEVAULT/VAULT</text>
         <rect x="200" y="476" width="64" height="40" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
         <text class="sub" x="232" y="500" text-anchor="middle">SBX2</text>
         <rect x="264" y="476" width="64" height="40" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
@@ -454,7 +454,7 @@
       <p class="caption">슬롯은 모두 32바이트 KEK를 얻어 같은 DEK를 푸는 방식이라, 하드웨어 슬롯을 추가해도 본문은 다시 암호화하지 않습니다. 모르는 <code>kind</code>의 슬롯은 해석하지 않고 그대로 보존합니다. 그래서 macOS에서 추가한 슬롯이 Linux에서 저장할 때 지워지지 않습니다. 패스프레이즈 슬롯은 항상 존재하며 복구 경로 역할을 합니다.</p>
     </section>
 
-    <footer>secretbox · commit a569210 · src/vault.rs · src/admin.rs · src/daemon.rs · src/client.rs</footer>
+    <footer>sagevault · commit a569210 · src/vault.rs · src/admin.rs · src/daemon.rs · src/client.rs</footer>
   </div>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// 임시 SECRETBOX_HOME에서 관리 CLI 흐름(init → set → profile → list/rm)을 실행해 보는 통합 테스트
+// 임시 SAGEVAULT_HOME에서 관리 CLI 흐름(init → set → profile → list/rm)을 실행해 보는 통합 테스트
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -7,13 +7,13 @@ fn sbx(home: &Path, stdin: &str, args: &[&str]) -> Output {
     sbx_in(Path::new("."), home, stdin, args)
 }
 
-/// cwd에서 실행한다. 네임스페이스는 cwd 위의 .secretbox 파일로도 정해진다.
+/// cwd에서 실행한다. 네임스페이스는 cwd 위의 .sagevault 파일로도 정해진다.
 fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_secretbox"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sgv"))
         .args(args)
         .current_dir(cwd)
-        .env("SECRETBOX_HOME", home)
-        .env("SECRETBOX_NO_GUI", "1")
+        .env("SAGEVAULT_HOME", home)
+        .env("SAGEVAULT_NO_GUI", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -171,7 +171,7 @@ fn daemon_session_and_exec() {
 
     // 첫 exec가 데몬을 띄우고, 잠겨 있으니 GUI를 시도하다(테스트에서는 꺼 둠) unlock을 안내한다.
     let o = sbx(&home, "", &["exec", "github"]);
-    assert!(stderr(&o).contains("secretbox unlock"), "{}", stderr(&o));
+    assert!(stderr(&o).contains("sgv unlock"), "{}", stderr(&o));
     let sock = home.join("sock");
     assert!(sock.exists(), "daemon was not auto-started");
     assert_eq!(
@@ -198,10 +198,10 @@ fn daemon_session_and_exec() {
     assert!(stderr(&sbx(&home, "", &["exec", "nope"])).contains("no profile named nope"));
 
     // 오래 사는 MCP 서버 대역: 임대가 1이 됐다가 프로세스가 죽으면 0으로 돌아온다.
-    let mut sleeper = Command::new(env!("CARGO_BIN_EXE_secretbox"))
+    let mut sleeper = Command::new(env!("CARGO_BIN_EXE_sgv"))
         .args(["exec", "sleeper"])
-        .env("SECRETBOX_HOME", &home)
-        .env("SECRETBOX_NO_GUI", "1")
+        .env("SAGEVAULT_HOME", &home)
+        .env("SAGEVAULT_NO_GUI", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -269,7 +269,7 @@ fn namespaces_are_isolated() {
     let _ = std::fs::remove_dir_all(&base);
     let (home, project) = (base.join("home"), base.join("acme-repo/src"));
     std::fs::create_dir_all(&project).unwrap();
-    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"acme\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"acme\"\n").unwrap();
     let _lock_default = LockOnDrop(home.clone(), "default");
     let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
     let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
@@ -304,7 +304,7 @@ fn namespaces_are_isolated() {
     assert!(home.join("ns/acme/vault").is_file() && home.join("vault").is_file());
 
     let o = sbx_in(&project, &home, "", &["ns"]);
-    assert!(stdout(&o).contains("namespace: acme (from ") && stdout(&o).contains(".secretbox)"));
+    assert!(stdout(&o).contains("namespace: acme (from ") && stdout(&o).contains(".sagevault)"));
     assert!(
         stdout(&o).contains("available: default, acme"),
         "{}",
@@ -348,7 +348,7 @@ fn namespaces_are_isolated() {
     // default는 여전히 잠겨 있다. 프로젝트 안에서 --ns로 넘어가도 마찬가지다.
     let o = sbx(&home, "", &["exec", "github"]);
     assert!(
-        stderr(&o).contains("locked: run `secretbox unlock`"),
+        stderr(&o).contains("locked: run `sgv unlock`"),
         "{}",
         stderr(&o)
     );
@@ -356,7 +356,7 @@ fn namespaces_are_isolated() {
     assert!(stderr(&o).contains("locked"), "{}", stderr(&o));
     assert!(stdout(&sbx_in(&project, &home, "", &["status"])).starts_with("acme: unlocked"));
 
-    // 저장소가 .secretbox를 다른 네임스페이스로 바꾸면 그쪽 신뢰 목록에는 없으므로 거부된다.
+    // 저장소가 .sagevault를 다른 네임스페이스로 바꾸면 그쪽 신뢰 목록에는 없으므로 거부된다.
     ok(sbx(
         &home,
         "otherpass\notherpass\n",
@@ -364,10 +364,10 @@ fn namespaces_are_isolated() {
     ));
     ok(sbx(&home, "otherpass\n", &["--ns", "other", "unlock"]));
     let _lock_other = LockOnDrop(home.clone(), "other");
-    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"other\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"other\"\n").unwrap();
     let o = sbx_in(&project, &home, "", &["exec", "github"]);
     assert!(stderr(&o).contains("is not trusted"), "{}", stderr(&o));
-    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"acme\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"acme\"\n").unwrap();
 
     // 경로 탈출과 잘못된 이름은 거부한다.
     assert!(stderr(&sbx(&home, "", &["--ns", "../x", "list"])).contains("invalid namespace"));

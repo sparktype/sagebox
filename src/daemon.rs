@@ -37,7 +37,7 @@ pub enum Request {
     Status,
     Exec {
         profile: String,
-        /// .secretbox로 네임스페이스가 정해졌을 때의 프로젝트 디렉터리
+        /// .sagevault로 네임스페이스가 정해졌을 때의 프로젝트 디렉터리
         #[serde(default)]
         project: Option<String>,
     },
@@ -93,7 +93,7 @@ struct Session {
 
 struct State {
     session: Option<Session>,
-    /// 살아 있는 exec 임대 수 (= secretbox로 띄운 MCP 서버 수)
+    /// 살아 있는 exec 임대 수 (= sagevault로 띄운 MCP 서버 수)
     leases: usize,
     /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
     idle_since: SystemTime,

@@ -268,7 +268,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "secretbox"
+name = "sagevault"
 version = "0.1.0"
 dependencies = [
  "argon2",

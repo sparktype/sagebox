@@ -1,4 +1,4 @@
-// 에이전트에게 비밀 정보를 안전하게 전달하는 secretbox 데몬 진입점
+// 에이전트에게 비밀 정보를 안전하게 전달하는 sagevault 데몬 진입점
 mod admin;
 mod audit;
 #[cfg(unix)]
@@ -17,23 +17,23 @@ use namespace::Ns;
 
 use vault::Result;
 
-const USAGE: &str = "usage: secretbox [--ns <namespace>] <command>
-  secretbox ns
-  secretbox trust | untrust [dir]
-  secretbox init
-  secretbox set <name> [--expires YYYY-MM-DD]
-  secretbox rm <name>
-  secretbox list
-  secretbox audit verify
-  secretbox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
-  secretbox profile rm <name>
-  secretbox unlock | lock | status
-  secretbox exec <profile>";
+const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
+  sgv ns
+  sgv trust | untrust [dir]
+  sgv init
+  sgv set <name> [--expires YYYY-MM-DD]
+  sgv rm <name>
+  sgv list
+  sgv audit verify
+  sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
+  sgv profile rm <name>
+  sgv unlock | lock | status
+  sgv exec <profile>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(&args.iter().map(String::as_str).collect::<Vec<_>>()) {
-        eprintln!("secretbox: {e}");
+        eprintln!("sgv: {e}");
         std::process::exit(1);
     }
 }
@@ -46,7 +46,7 @@ fn run(args: &[&str]) -> Result<()> {
     let root = data_root()?;
     let cwd = std::env::current_dir()?;
     let (name, source, project) =
-        namespace::resolve(flag, std::env::var("SECRETBOX_NS").ok(), &cwd)?;
+        namespace::resolve(flag, std::env::var("SAGEVAULT_NS").ok(), &cwd)?;
     let ns = Ns {
         dir: namespace::dir(&root, &name),
         name,
@@ -65,7 +65,7 @@ fn run(args: &[&str]) -> Result<()> {
         ["init"] => admin::init(&vault),
         ["trust"] => {
             let dir = ns.project.as_ref().ok_or(
-                "trust needs a .secretbox file naming a non-default namespace in this directory or above",
+                "trust needs a .sagevault file naming a non-default namespace in this directory or above",
             )?;
             admin::trust(&vault, dir)?;
             println!("trusted {} for namespace {}", dir.display(), ns.name);
@@ -75,7 +75,7 @@ fn run(args: &[&str]) -> Result<()> {
             let dir = ns
                 .project
                 .as_ref()
-                .ok_or("no .secretbox project here; use `untrust <dir>`")?;
+                .ok_or("no .sagevault project here; use `untrust <dir>`")?;
             admin::untrust(&vault, &dir.display().to_string())
         }
         ["untrust", dir] => admin::untrust(&vault, dir),
@@ -107,13 +107,13 @@ fn run(args: &[&str]) -> Result<()> {
     }
 }
 
-/// `$SECRETBOX_HOME` 또는 `~/.secretbox`. default 네임스페이스는 이 디렉터리를 그대로 쓴다.
+/// `$SAGEVAULT_HOME` 또는 `~/.sagevault`. default 네임스페이스는 이 디렉터리를 그대로 쓴다.
 fn data_root() -> Result<PathBuf> {
-    Ok(match std::env::var_os("SECRETBOX_HOME") {
+    Ok(match std::env::var_os("SAGEVAULT_HOME") {
         Some(d) => PathBuf::from(d),
         None => std::env::home_dir()
             .ok_or("cannot find home directory")?
-            .join(".secretbox"),
+            .join(".sagevault"),
     })
 }
 
