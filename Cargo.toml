@@ -20,3 +20,9 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# 디버그 빌드에서도 KDF가 느리지 않게
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

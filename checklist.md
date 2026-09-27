@@ -7,9 +7,9 @@
 - [x] 봉투 형식 SBX2 (DEK + 패스프레이즈 슬롯, 모르는 슬롯 보존) → verify: 테스트 7개, linux·windows `cargo check`
 
 ## 2단계 — 관리 CLI
-- [ ] `init`, `set <name>`(tty 무에코 입력), `rm <name>`, `list`
-- [ ] `profile add <name> --env ENV=secret ... -- <argv>`, `profile rm`
-- [ ] verify: 임시 HOME에서 수동 실행
+- [x] `init`, `set <name>`(tty 무에코 입력), `rm <name>`, `list`
+- [x] `profile add <name> --env ENV=secret ... -- <argv>`, `profile rm`
+- [x] verify: 임시 HOME에서 수동 실행 + `tests/cli.rs`
 
 ## 3단계 — 데몬과 exec
 - [ ] `daemon`: 소켓 0600, `getpeereid` UID 확인, 세션 키 보관, TTL
