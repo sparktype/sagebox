@@ -16,7 +16,7 @@ const RESERVED_ENV: &[&str] = &[
 ];
 
 /// POSIX 이름(`[A-Za-z_][A-Za-z0-9_]*`)이고 예약 변수가 아니어야 한다.
-fn check_env_name(name: &str) -> Result<()> {
+pub(crate) fn check_env_name(name: &str) -> Result<()> {
     let mut chars = name.chars();
     let valid = matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_');
@@ -57,7 +57,7 @@ fn unlock(path: &Path) -> Result<(Header, Vault, Dek)> {
 
 /// 볼트를 열어 f로 고친 뒤 같은 슬롯으로 다시 저장한다.
 // ponytail: 동시에 두 관리 명령이 돌면 나중에 쓴 쪽이 이긴다. 필요해지면 파일 잠금 추가
-fn edit(path: &Path, f: impl FnOnce(&mut Vault) -> Result<()>) -> Result<()> {
+pub(crate) fn edit(path: &Path, f: impl FnOnce(&mut Vault) -> Result<()>) -> Result<()> {
     let (header, mut vault, dek) = unlock(path)?;
     f(&mut vault)?;
     vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)

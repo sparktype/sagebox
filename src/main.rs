@@ -5,6 +5,7 @@ mod audit;
 mod client;
 #[cfg(unix)]
 mod daemon;
+mod import;
 mod namespace;
 #[cfg(unix)]
 mod prompt;
@@ -25,6 +26,7 @@ const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
   sgv rm <name>
   sgv list
   sgv audit verify
+  sgv import <mcp.json> [--keep VAR]... [--apply]
   sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   sgv profile rm <name>
   sgv unlock | lock | status
@@ -83,6 +85,22 @@ fn run(args: &[&str]) -> Result<()> {
         ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
         ["rm", name] => admin::rm(&vault, name),
         ["list"] => admin::list(&vault),
+        ["import", file, flags @ ..] => {
+            let (mut keep, mut apply) = (vec![], false);
+            let mut it = flags.iter();
+            while let Some(f) = it.next() {
+                match *f {
+                    "--apply" => apply = true,
+                    "--keep" => keep.push(*it.next().ok_or("--keep needs a variable name")?),
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            let ns_args = match ns.name.as_str() {
+                namespace::DEFAULT => vec![],
+                name => vec!["--ns".to_string(), name.to_string()],
+            };
+            import::run(&vault, Path::new(file), &keep, apply, &ns_args)
+        }
         ["audit", "verify"] => admin::audit_verify(&vault, &dir.join("audit.log")),
         ["profile", "add", name, rest @ ..] => {
             let (env, command) = parse_profile_args(rest)?;

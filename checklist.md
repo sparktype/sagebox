@@ -46,6 +46,13 @@
 
 - [x] 프로젝트 신뢰 등록 (`trust`/`untrust`, 볼트에 저장, 데몬이 검사)
 
+## 3.8단계 — 평문 MCP 설정 가져오기 (`sgv import`)
+- [x] `src/import.rs`: `mcpServers` JSON 파싱, env 변수 분류(값 모양 + 이름 규칙, 애매하면 비밀), 명령 절대경로 고정
+- [x] 기본은 미리보기, `--apply`로 볼트(비밀·프로필)와 설정 파일을 원자적으로 바꾼다. `--keep VAR`, 값은 절대 출력하지 않는다
+- [x] 이미 sgv로 관리 중인 서버와 비밀이 없는 서버는 건너뛴다. 이름 충돌은 쓰기 전에 전부 검사한다
+- [x] verify: 분류 단위 테스트, 미리보기→적용→exec 통합 테스트, 적용 후 설정 파일에 평문 없음
+- [ ] (다음) `--assist`: 애매한 변수 **이름만** Jev로 판단
+
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)

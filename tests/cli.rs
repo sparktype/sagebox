@@ -384,3 +384,93 @@ fn namespaces_are_isolated() {
     );
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn import_mcp_config() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = std::env::temp_dir().join(format!("sbx-imp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).unwrap();
+    let home = base.join("home");
+    let _cleanup = LockOnDrop(home.clone(), "default");
+    let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
+    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+    ok(sbx(&home, "password\npassword\n", &["init"]));
+
+    let cfg = base.join("mcp.json");
+    let original = r#"{
+  "mcpServers": {
+    "github": {"command": "env", "args": [], "env": {"GITHUB_TOKEN": "ghp_testtoken1234567890abcdef", "LOG_LEVEL": "info"}},
+    "slack": {"command": "env", "env": {"SLACK_WEBHOOK_URL": "https://hooks.slack.com/services/T0/B0/xyz"}},
+    "plain": {"command": "env", "args": ["-0"]},
+    "odd": {"command": "env", "env": {"SENTRY_DSN": "https://abc123@o1.ingest.sentry.io/42"}}
+  },
+  "other": {"keep": true}
+}"#;
+    std::fs::write(&cfg, original).unwrap();
+    std::fs::set_permissions(&cfg, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let cfg_s = cfg.to_str().unwrap();
+
+    // 미리보기: 아무것도 바꾸지 않고, 값은 출력하지 않는다.
+    let o = sbx(&home, "", &["import", cfg_s]);
+    let out = stdout(&o);
+    assert!(
+        out.contains("GITHUB_TOKEN -> secret github.GITHUB_TOKEN [token prefix]"),
+        "{out}"
+    );
+    assert!(out.contains("LOG_LEVEL stays in config") && out.contains("plain: no secrets"));
+    assert!(
+        out.contains("SENTRY_DSN -> secret odd.SENTRY_DSN [unsure]") && out.contains("dry run")
+    );
+    assert!(
+        !out.contains("ghp_") && !out.contains("hooks.slack.com"),
+        "values leaked: {out}"
+    );
+    assert_eq!(std::fs::read_to_string(&cfg).unwrap(), original);
+
+    // 적용: 애매한 SENTRY_DSN은 --keep으로 설정에 남긴다.
+    let o = sbx(
+        &home,
+        "password\n",
+        &["import", cfg_s, "--keep", "SENTRY_DSN", "--apply"],
+    );
+    assert!(
+        stdout(&o).contains("imported 2 secrets"),
+        "{}{}",
+        stdout(&o),
+        stderr(&o)
+    );
+    let text = std::fs::read_to_string(&cfg).unwrap();
+    assert!(
+        !text.contains("ghp_") && !text.contains("hooks.slack.com"),
+        "{text}"
+    );
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let gh = &v["mcpServers"]["github"];
+    assert!(gh["command"].as_str().unwrap().ends_with("sgv"));
+    assert_eq!(gh["args"], serde_json::json!(["exec", "github"]));
+    assert_eq!(gh["env"], serde_json::json!({"LOG_LEVEL": "info"}));
+    assert!(v["mcpServers"]["slack"].get("env").is_none());
+    assert_eq!(v["mcpServers"]["odd"]["command"], "env");
+    assert_eq!(v["other"]["keep"], true);
+    let mode = std::fs::metadata(&cfg).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o644, "permissions not preserved");
+
+    // 다시 실행하면 이미 관리 중이라 건너뛴다.
+    let out = stdout(&sbx(&home, "", &["import", cfg_s]));
+    assert!(out.contains("github: already managed by sgv"), "{out}");
+
+    // 옮긴 비밀이 실제로 exec에 주입된다.
+    ok(sbx(&home, "password\n", &["unlock"]));
+    let o = sbx(&home, "", &["exec", "github"]);
+    assert!(
+        stdout(&o).contains("GITHUB_TOKEN=ghp_testtoken1234567890abcdef"),
+        "{}",
+        stderr(&o)
+    );
+
+    drop(_cleanup);
+    std::fs::remove_dir_all(&base).unwrap();
+}
