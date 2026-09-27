@@ -12,6 +12,9 @@
 - **세션 단위 잠금 해제.** `secretbox unlock`으로 한 번 풀면 `lock`을 실행하거나 세션 TTL이 끝날 때까지 추가 확인 없이 `exec`가 동작한다.
 - **프로필별 접근 정책.** 프로필은 실행할 명령(argv)과 주입할 `ENV ← 비밀이름` 매핑을 고정한다.
 - **감사 로그.** 모든 `exec` 요청(허용/거부)을 기록한다. 비밀 값은 기록하지 않는다.
+- **크로스플랫폼.** macOS·Linux를 먼저 지원한다. Windows는 구조만 열어 둔다(IPC는 named pipe, `exec`는 자식 실행 + stdio 상속). 플랫폼 전용 코드는 `cfg`로 격리한다.
+- **봉투 암호화 + 키 슬롯.** 볼트 본문은 무작위 DEK로 암호화한다. 각 슬롯은 DEK를 서로 다른 방법으로 감싼다. 패스프레이즈 슬롯은 항상 존재하며 복구 경로 역할을 한다.
+- **하드웨어 슬롯은 순차 도입.** macOS Secure Enclave(Touch ID)부터 시작한다. 서명되지 않은 바이너리에서 동작하는지 먼저 검증한 뒤 구현한다. 이후 FIDO2 `hmac-secret`, TPM2를 검토한다.
 
 ## 위협 모델
 
@@ -45,21 +48,23 @@ execve(argv, env)   ← 클라이언트 프로세스가 MCP 서버로 바뀜 (st
 ## 볼트 파일 형식
 
 ```
-"SBX1" | salt(16) | m_cost(u32 LE) | t_cost(u32 LE) | p_cost(u32 LE) | nonce(24) | ciphertext+tag
+"SBX2" | header_len(u32 LE) | header(JSON) | nonce(24) | body ciphertext+tag
 ```
 
-- KDF: Argon2id, 기본 m=64 MiB, t=3, p=1. 파라미터는 헤더에 저장하므로 나중에 올릴 수 있다.
-- AEAD: XChaCha20-Poly1305. 앞의 헤더 전체(nonce 제외)를 AAD로 넣어 파라미터 변조를 막는다.
+- 본문: XChaCha20-Poly1305(DEK), AAD = 앞의 `"SBX2" | header_len | header` 전체. 슬롯이나 파라미터를 바꾸면 본문 인증이 깨진다.
+- 헤더: `{"version": 2, "slots": [{"kind", "params", "nonce", "wrapped"}]}`.
+  - 모든 슬롯은 어떤 방법으로든 32바이트 KEK를 얻고, `wrapped = XChaCha20-Poly1305(KEK, DEK)`를 푼다. 슬롯마다 다른 것은 KEK를 얻는 방법뿐이다.
+  - 모르는 `kind`는 해석하지 않고 그대로 보존한다. 다른 OS에서 추가한 하드웨어 슬롯이 관리 명령 한 번에 지워지지 않게 하기 위해서다.
+  - `passphrase` 슬롯: `params = {salt(16), m_cost, t_cost, p_cost}`, KEK = Argon2id. 기본값은 m=64 MiB, t=3, p=1이다. wrap의 AAD는 `kind`와 `params`의 직렬화이므로 파라미터를 낮추는 변조를 막는다.
 - 평문: JSON `{"secrets": {이름: 값}, "profiles": {이름: {"command": [...], "env": {ENV: 비밀이름}}}}`.
-- salt는 `init` 때 한 번 정하고 유지한다. 데몬이 보관한 세션 키가 `set` 이후에도 유효해야 하기 때문이다. nonce는 저장할 때마다 새로 뽑는다.
+- 데몬은 세션 동안 DEK만 보관한다. 저장할 때마다 본문 nonce를 새로 뽑고, DEK와 슬롯은 유지한다.
 
 ## 기본 경로
 
-- 볼트 `~/.secretbox/vault`, 소켓 `~/.secretbox/sock`, 감사 로그 `~/.secretbox/audit.log`. 디렉터리 모드는 0700.
+- 볼트 `~/.secretbox/vault`, 소켓 `~/.secretbox/sock`, 감사 로그 `~/.secretbox/audit.log`. 디렉터리 모드는 0700 (Unix).
 
 ## 열린 질문
 
 - 세션 TTL 기본값. 초안은 8시간 고정.
 - 데몬 자동 시작 (launchd plist vs `unlock` 시 자동 기동).
 - `mlock`으로 세션 키가 스왑되지 않게 막을지. macOS는 스왑을 기본 암호화하므로 우선순위는 낮다.
-- macOS Keychain/Touch ID로 잠금 해제하는 방식.
