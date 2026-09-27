@@ -20,6 +20,10 @@ fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
     if !autostart {
         return Ok(None);
     }
+    crate::debug::log(format_args!(
+        "no daemon at {}; spawning one",
+        sock.display()
+    ));
     spawn_daemon(&ns.name)?;
     for _ in 0..100 {
         std::thread::sleep(Duration::from_millis(20));
@@ -160,6 +164,10 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
 pub fn exec(ns: &Ns, profile: &str) -> Result<()> {
     let (mut s, mut resp) = exec_request(ns, profile)?;
     if matches!(resp, Response::Locked) {
+        crate::debug::log(format_args!(
+            "namespace {} is locked; asking via GUI",
+            ns.name
+        ));
         gui_unlock(ns, profile)?;
         (s, resp) = exec_request(ns, profile)?;
     }

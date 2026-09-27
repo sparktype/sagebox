@@ -54,6 +54,14 @@
 - [ ] (보류, 2026-09-28 사용자 결정) `--assist`: 애매한 변수 **이름만** Jev로 판단. 재개 시 결정할 것: HTTP는 시스템 curl + stdin 헤더, API 키는 볼트에 보관
 - [ ] (보류) `sgv trust --scan`: 저장소 지시 파일을 Jev로 검사(옵트인, 경고만)
 
+## 3.9단계 — Mac 편의 기능 (사용자 결정 순서)
+- [x] 잠자기 감지(벽시계 − 단조 시계 차이 > 30초)와 화면 잠금 감지(macOS `CGSSessionScreenIsLocked`) 시 데몬 종료 → verify: 잠자기 판정 단위 테스트, 세션 조회 실기(잠금 해제 상태에서 키 없음 확인)
+  - [ ] 실제로 화면을 잠갔을 때 데몬이 종료되는지 사용자 확인 (`SAGEVAULT_DEBUG=1`로 debug.log의 `end … screen locked`)
+- [x] 개발·디버깅 환경변수 `SAGEVAULT_DEBUG`, `SAGEVAULT_NO_AUTOLOCK`
+- [ ] Touch ID 잠금 해제: 먼저 스파이크(서명 없는 CLI에서 LocalAuthentication + 로그인 키체인), 그다음 키체인 슬롯
+- [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
+- [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움), `sgv mcp add` (Claude Code 등록 도우미)
+
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)

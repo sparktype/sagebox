@@ -5,7 +5,11 @@ mod audit;
 mod client;
 #[cfg(unix)]
 mod daemon;
+#[cfg(unix)]
+mod debug;
 mod import;
+#[cfg(target_os = "macos")]
+mod macos;
 mod namespace;
 #[cfg(unix)]
 mod prompt;

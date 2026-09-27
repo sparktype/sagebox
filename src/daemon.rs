@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,8 @@ const FIRST_LEASE_WAIT: Duration = Duration::from_secs(10 * 60);
 /// 잠긴 채 요청이 없으면 종료. GUI 프롬프트에 입력하는 동안은 살아 있어야 한다.
 const LOCKED_IDLE: Duration = Duration::from_secs(2 * 60);
 const CHECK_EVERY: Duration = Duration::from_secs(5);
+/// 벽시계가 단조 시계보다 이만큼 더 흘렀으면 잠자기로 본다(NTP 보정 정도의 오차는 넘지 않는다).
+const SLEEP_GAP: Duration = Duration::from_secs(30);
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_MSG: usize = 1 << 20;
 
@@ -98,6 +100,13 @@ struct State {
     /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
     idle_since: SystemTime,
     had_lease: bool,
+}
+
+/// 두 확인 사이에 시스템이 잠들었는가. 벽시계는 잠자기 중에도 흐르지만 Instant(macOS
+/// CLOCK_UPTIME_RAW, Linux CLOCK_MONOTONIC)는 멈추므로, 벽시계만 크게 앞서 있으면 잠들었던 것이다.
+/// 벽시계 간격만 보면 스케줄링 지연(바쁜 시스템)과 구분할 수 없다.
+fn slept(wall_delta: Duration, mono_delta: Duration) -> bool {
+    wall_delta.saturating_sub(mono_delta) > SLEEP_GAP
 }
 
 /// 데몬이 DEK를 지우고 종료해야 하는가. 시간은 벽시계로 잰다(단조 시계는 절전 중 멈춘다).
@@ -186,6 +195,13 @@ pub fn serve(dir: &Path) -> Result<()> {
     let _ = std::fs::remove_file(&sock);
     let listener = UnixListener::bind(&sock)?;
     std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
+    crate::debug::to_file(&dir.join("debug.log"));
+    // 개발·디버깅용: 화면을 잠근 채 에이전트를 돌릴 때 등
+    let autolock = !crate::debug::flag("SAGEVAULT_NO_AUTOLOCK");
+    crate::debug::log(format_args!(
+        "daemon started on {} autolock={autolock}",
+        sock.display()
+    ));
 
     let d = Arc::new(Daemon {
         vault: dir.join("vault"),
@@ -200,11 +216,22 @@ pub fn serve(dir: &Path) -> Result<()> {
     });
     let checker = d.clone();
     std::thread::spawn(move || {
+        let (mut wall, mut mono) = (SystemTime::now(), Instant::now());
         loop {
             std::thread::sleep(CHECK_EVERY);
-            if should_exit(&checker.state.lock().unwrap(), SystemTime::now()) {
+            let (now_wall, now_mono) = (SystemTime::now(), Instant::now());
+            let wall_delta = now_wall.duration_since(wall).unwrap_or_default();
+            if autolock && slept(wall_delta, now_mono - mono) {
+                checker.shutdown("system sleep");
+            }
+            #[cfg(target_os = "macos")]
+            if autolock && crate::macos::screen_locked() == Some(true) {
+                checker.shutdown("screen locked");
+            }
+            if should_exit(&checker.state.lock().unwrap(), now_wall) {
                 checker.shutdown("expired");
             }
+            (wall, mono) = (now_wall, now_mono);
         }
     });
 
@@ -357,6 +384,9 @@ impl Daemon {
 
     /// 비밀 값은 절대 넣지 않는다.
     fn audit(&self, pid: i32, op: &str, profile: Option<&str>, result: &str) -> Result<()> {
+        crate::debug::log(format_args!(
+            "{op} pid={pid} profile={profile:?} -> {result}"
+        ));
         let line = serde_json::json!({"ts": vault::unix_now(), "pid": pid, "op": op, "profile": profile, "result": result});
         self.audit_log.lock().unwrap().append(line)
     }
@@ -412,5 +442,17 @@ mod tests {
         assert!(should_exit(&state(true, 1, true, t0), t0 + 8 * 60 * MIN));
         // 시계가 뒤로 가면 종료
         assert!(should_exit(&state(true, 1, true, t0), t0 - MIN));
+    }
+
+    #[test]
+    fn sleep_detection() {
+        // 정상: 두 시계가 함께 5초 흐름
+        assert!(!slept(5 * SEC, 5 * SEC));
+        // 바쁜 시스템: 확인이 늦어져도 두 시계가 함께 흐르면 잠자기가 아니다
+        assert!(!slept(90 * SEC, 90 * SEC));
+        // 잠자기: 벽시계만 10분 흐르고 단조 시계는 5초
+        assert!(slept(10 * MIN, 5 * SEC));
+        // NTP 보정 정도의 차이는 무시
+        assert!(!slept(15 * SEC, 5 * SEC));
     }
 }
