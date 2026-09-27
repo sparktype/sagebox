@@ -1,5 +1,9 @@
 // 에이전트에게 비밀 정보를 안전하게 전달하는 secretbox 데몬 진입점
 mod admin;
+#[cfg(unix)]
+mod client;
+#[cfg(unix)]
+mod daemon;
 mod vault;
 
 use std::collections::BTreeMap;
@@ -13,7 +17,10 @@ const USAGE: &str = "usage:
   secretbox rm <name>
   secretbox list
   secretbox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
-  secretbox profile rm <name>";
+  secretbox profile rm <name>
+  secretbox daemon
+  secretbox unlock | lock | status
+  secretbox exec <profile>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,7 +31,8 @@ fn main() {
 }
 
 fn run(args: &[&str]) -> Result<()> {
-    let vault = data_dir()?.join("vault");
+    let dir = data_dir()?;
+    let vault = dir.join("vault");
     match args {
         ["init"] => admin::init(&vault),
         ["set", name] => admin::set(&vault, name),
@@ -35,6 +43,20 @@ fn run(args: &[&str]) -> Result<()> {
             admin::profile_add(&vault, name, env, command)
         }
         ["profile", "rm", name] => admin::profile_rm(&vault, name),
+        #[cfg(unix)]
+        ["daemon"] => daemon::serve(&dir),
+        #[cfg(unix)]
+        ["unlock"] => client::unlock(&dir),
+        #[cfg(unix)]
+        ["lock"] => client::lock(&dir),
+        #[cfg(unix)]
+        ["status"] => client::status(&dir),
+        #[cfg(unix)]
+        ["exec", profile] => client::exec(&dir, profile),
+        #[cfg(not(unix))]
+        ["daemon" | "unlock" | "lock" | "status"] | ["exec", _] => {
+            Err("not supported on this platform yet".into())
+        }
         _ => Err(USAGE.into()),
     }
 }

@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 use crate::vault::{self, Dek, Header, Profile, Result, Vault};
 
 /// 터미널이면 에코 없이 묻고, 파이프면 stdin에서 한 줄 읽는다.
-fn read_secret(prompt: &str) -> Result<Zeroizing<String>> {
+pub(crate) fn read_secret(prompt: &str) -> Result<Zeroizing<String>> {
     let mut s = if std::io::stdin().is_terminal() {
         Zeroizing::new(rpassword::prompt_password(prompt)?)
     } else {

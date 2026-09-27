@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 secretbox is a personal secret-management daemon for AI agents: agents fetch passwords/API keys on demand over a local, authenticated channel and use them for MCP servers or skills. Requirements and design decisions live in `SPEC.md` — read it before implementing a feature, and update it (move items from "설계 초안"/"열린 질문" to "확정된 요구사항") when a decision is made.
 
-Status: vault file format (`src/vault.rs`, envelope encryption: random DEK + key slots) and the admin CLI (`src/admin.rs`: init/set/rm/list/profile) are done; the daemon and `exec` are not. Progress is tracked in `checklist.md`, decision rationale in `context-notes.md`.
+Status: vault file format (`src/vault.rs`, envelope encryption: random DEK + key slots) the admin CLI (`src/admin.rs`), and the Unix daemon (`src/daemon.rs`) + client (`src/client.rs`: unlock/lock/status/exec) are done. Next: hardware key slots (see `checklist.md`). Progress is tracked in `checklist.md`, decision rationale in `context-notes.md`.
 
 ## Commands
 
@@ -26,7 +26,9 @@ cargo check --all-targets --target x86_64-pc-windows-msvc
 
 ## Testing the CLI
 
-`SECRETBOX_HOME` overrides the data dir (`~/.secretbox`). When stdin is not a TTY, every passphrase/value prompt reads one line from stdin in order, e.g. `printf 'pw\nvalue\n' | secretbox set gh` (passphrase first, then value). `tests/cli.rs` drives the binary this way.
+`SECRETBOX_HOME` overrides the data dir (`~/.secretbox`). When stdin is not a TTY, every passphrase/value prompt reads one line from stdin in order, e.g. `printf 'pw\nvalue\n' | secretbox set gh` (passphrase first, then value). `tests/cli.rs` drives the binary this way, including spawning `secretbox daemon` against a temp home.
+
+Flow: admin commands edit the vault file directly with the passphrase (never via the daemon). The daemon holds only the DEK for the session; each `exec` re-reads the vault, returns the pinned argv + env over the socket, and the client `execve`s it.
 
 ## Constraints
 
