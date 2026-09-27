@@ -36,6 +36,14 @@
 
 - [ ] GUI 프롬프트 실기 확인 (macOS 대화상자 입력, Linux zenity/kdialog/pinentry). 자동 테스트는 `SECRETBOX_NO_GUI`로 끔
 
+## 3.7단계 — 프로젝트별 네임스페이스 (보안 격리)
+- [x] 네임스페이스마다 볼트·패스프레이즈·데몬(소켓)·감사 로그를 분리한다. default는 기존 `~/.secretbox`, 이름 있는 것은 `~/.secretbox/ns/<name>/`
+- [x] 결정 순서: `--ns` > `SECRETBOX_NS` > 상위 탐색한 `.secretbox` 파일(`namespace = "acme"`) > default
+- [x] 이름 검증 `[a-z0-9][a-z0-9_-]{0,31}` (경로 탈출 방지, 소켓 경로 길이 제한)
+- [x] 자동 기동 데몬에 네임스페이스 전달, GUI 프롬프트·status에 네임스페이스와 프로젝트 표시
+- [x] `secretbox ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
+- [x] verify: 결정 순서·파싱·검증 단위 테스트, 두 네임스페이스 격리 통합 테스트
+
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)

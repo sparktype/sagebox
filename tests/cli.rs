@@ -4,8 +4,14 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 fn sbx(home: &Path, stdin: &str, args: &[&str]) -> Output {
+    sbx_in(Path::new("."), home, stdin, args)
+}
+
+/// cwd에서 실행한다. 네임스페이스는 cwd 위의 .secretbox 파일로도 정해진다.
+fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_secretbox"))
         .args(args)
+        .current_dir(cwd)
         .env("SECRETBOX_HOME", home)
         .env("SECRETBOX_NO_GUI", "1")
         .stdin(Stdio::piped())
@@ -118,14 +124,14 @@ fn admin_flow() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// 테스트가 실패해도 자동 기동된 데몬을 lock으로 끝낸다.
+/// 테스트가 실패해도 자동 기동된 데몬을 lock으로 끝낸다. (데이터 홈, 네임스페이스)
 #[cfg(unix)]
-struct LockOnDrop(std::path::PathBuf);
+struct LockOnDrop(std::path::PathBuf, &'static str);
 
 #[cfg(unix)]
 impl Drop for LockOnDrop {
     fn drop(&mut self) {
-        let _ = sbx(&self.0, "", &["lock"]);
+        let _ = sbx(&self.0, "", &["--ns", self.1, "lock"]);
     }
 }
 
@@ -147,7 +153,7 @@ fn daemon_session_and_exec() {
 
     let home = std::env::temp_dir().join(format!("sbx-d-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
-    let _cleanup = LockOnDrop(home.clone());
+    let _cleanup = LockOnDrop(home.clone(), "default");
     let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
     let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
     let status = || stdout(&sbx(&home, "", &["status"]));
@@ -161,7 +167,7 @@ fn daemon_session_and_exec() {
         args.extend(cmd);
         ok(sbx(&home, "password\n", &args));
     }
-    assert_eq!(status(), "locked (daemon not running)\n");
+    assert_eq!(status(), "default: locked (daemon not running)\n");
 
     // 첫 exec가 데몬을 띄우고, 잠겨 있으니 GUI를 시도하다(테스트에서는 꺼 둠) unlock을 안내한다.
     let o = sbx(&home, "", &["exec", "github"]);
@@ -172,12 +178,16 @@ fn daemon_session_and_exec() {
         std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777,
         0o600
     );
-    assert_eq!(status(), "locked\n");
+    assert_eq!(status(), "default: locked\n");
     assert!(stderr(&sbx(&home, "", &["daemon"])).contains("already running"));
 
     assert!(stderr(&sbx(&home, "wrong\n", &["unlock"])).contains("wrong passphrase"));
     ok(sbx(&home, "password\n", &["unlock"]));
-    assert!(status().starts_with("unlocked (0 active"), "{}", status());
+    assert!(
+        status().starts_with("default: unlocked (0 active"),
+        "{}",
+        status()
+    );
 
     let o = sbx(&home, "", &["exec", "github"]);
     assert!(
@@ -198,14 +208,14 @@ fn daemon_session_and_exec() {
         .spawn()
         .unwrap();
     assert!(
-        wait_until(|| status().starts_with("unlocked (1 active")),
+        wait_until(|| status().starts_with("default: unlocked (1 active")),
         "{}",
         status()
     );
     sleeper.kill().unwrap();
     sleeper.wait().unwrap();
     assert!(
-        wait_until(|| status().starts_with("unlocked (0 active")),
+        wait_until(|| status().starts_with("default: unlocked (0 active")),
         "{}",
         status()
     );
@@ -216,7 +226,7 @@ fn daemon_session_and_exec() {
         wait_until(|| !sock.exists()),
         "daemon still running after lock"
     );
-    assert_eq!(status(), "locked (daemon not running)\n");
+    assert_eq!(status(), "default: locked (daemon not running)\n");
 
     let audit = std::fs::read_to_string(home.join("audit.log")).unwrap();
     assert!(!audit.contains("ghp_123"), "secret value in audit log");
@@ -250,4 +260,94 @@ fn daemon_session_and_exec() {
     assert!(!o.status.success() && stdout(&o).contains("MAC mismatch"));
 
     std::fs::remove_dir_all(&home).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn namespaces_are_isolated() {
+    let base = std::env::temp_dir().join(format!("sbx-ns-it-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (home, project) = (base.join("home"), base.join("acme-repo/src"));
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(base.join("acme-repo/.secretbox"), "namespace = \"acme\"\n").unwrap();
+    let _lock_default = LockOnDrop(home.clone(), "default");
+    let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
+    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+
+    // default와 acme는 볼트·패스프레이즈가 따로다.
+    ok(sbx(&home, "personal1\npersonal1\n", &["init"]));
+    ok(sbx(&home, "personal1\npersonal_tok\n", &["set", "gh"]));
+    ok(sbx_in(&project, &home, "acmepass1\nacmepass1\n", &["init"]));
+    ok(sbx_in(
+        &project,
+        &home,
+        "acmepass1\nacme_tok\n",
+        &["set", "gh"],
+    ));
+    for cwd in [Path::new("."), project.as_path()] {
+        let pass = if cwd == project {
+            "acmepass1\n"
+        } else {
+            "personal1\n"
+        };
+        let args = [
+            "profile",
+            "add",
+            "github",
+            "--env",
+            "GITHUB_TOKEN=gh",
+            "--",
+            "/usr/bin/env",
+        ];
+        ok(sbx_in(cwd, &home, pass, &args));
+    }
+    assert!(home.join("ns/acme/vault").is_file() && home.join("vault").is_file());
+
+    let o = sbx_in(&project, &home, "", &["ns"]);
+    assert!(stdout(&o).contains("namespace: acme (from ") && stdout(&o).contains(".secretbox)"));
+    assert!(
+        stdout(&o).contains("available: default, acme"),
+        "{}",
+        stdout(&o)
+    );
+
+    // acme만 푼다. 프로젝트 안의 exec는 acme 토큰을 받는다.
+    let _lock_acme = LockOnDrop(home.clone(), "acme");
+    assert!(
+        stderr(&sbx_in(&project, &home, "personal1\n", &["unlock"])).contains("wrong passphrase")
+    );
+    ok(sbx_in(&project, &home, "acmepass1\n", &["unlock"]));
+    let o = sbx_in(&project, &home, "", &["exec", "github"]);
+    assert!(
+        stdout(&o).contains("GITHUB_TOKEN=acme_tok"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(!stdout(&o).contains("personal_tok"));
+
+    // default는 여전히 잠겨 있다. 프로젝트 안에서 --ns로 넘어가도 마찬가지다.
+    let o = sbx(&home, "", &["exec", "github"]);
+    assert!(
+        stderr(&o).contains("locked: run `secretbox unlock`"),
+        "{}",
+        stderr(&o)
+    );
+    let o = sbx_in(&project, &home, "", &["--ns", "default", "exec", "github"]);
+    assert!(stderr(&o).contains("locked"), "{}", stderr(&o));
+    assert!(stdout(&sbx_in(&project, &home, "", &["status"])).starts_with("acme: unlocked"));
+
+    // 경로 탈출과 잘못된 이름은 거부한다.
+    assert!(stderr(&sbx(&home, "", &["--ns", "../x", "list"])).contains("invalid namespace"));
+
+    // 감사 로그도 분리된다.
+    let acme_log = std::fs::read_to_string(home.join("ns/acme/audit.log")).unwrap();
+    let default_log = std::fs::read_to_string(home.join("audit.log")).unwrap();
+    assert!(acme_log.contains("ok: gh") && !default_log.contains("ok: gh"));
+
+    drop((_lock_acme, _lock_default));
+    assert!(
+        wait_until(|| !home.join("ns/acme/sock").exists()),
+        "acme daemon still running"
+    );
+    std::fs::remove_dir_all(&base).unwrap();
 }

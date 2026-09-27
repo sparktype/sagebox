@@ -2,25 +2,25 @@
 use std::os::fd::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
-use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use crate::admin::read_secret;
 use crate::daemon::{Request, Response, recv, send};
+use crate::namespace::{self, Ns};
 use crate::prompt;
 use crate::vault::Result;
 
 /// 데몬에 연결한다. autostart면 없을 때 띄우고 소켓이 생길 때까지 기다린다.
-fn connect(dir: &Path, autostart: bool) -> Result<Option<UnixStream>> {
-    let sock = dir.join("sock");
+fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
+    let sock = ns.dir.join("sock");
     if let Ok(s) = UnixStream::connect(&sock) {
         return Ok(Some(s));
     }
     if !autostart {
         return Ok(None);
     }
-    spawn_daemon()?;
+    spawn_daemon(&ns.name)?;
     for _ in 0..100 {
         std::thread::sleep(Duration::from_millis(20));
         if let Ok(s) = UnixStream::connect(&sock) {
@@ -32,9 +32,9 @@ fn connect(dir: &Path, autostart: bool) -> Result<Option<UnixStream>> {
 
 /// double fork + setsid로 데몬을 띄운다. exec 클라이언트는 곧 MCP 서버로 바뀌어
 /// 자식을 wait하지 않으므로, 데몬을 init에 입양시켜 좀비가 남지 않게 한다.
-fn spawn_daemon() -> Result<()> {
+fn spawn_daemon(ns: &str) -> Result<()> {
     let mut cmd = Command::new(std::env::current_exe()?);
-    cmd.arg("daemon")
+    cmd.args(["--ns", ns, "daemon"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -53,6 +53,15 @@ fn spawn_daemon() -> Result<()> {
     Ok(())
 }
 
+/// 이 네임스페이스를 푸는 명령. default가 아니면 --ns를 붙인다.
+fn unlock_hint(ns: &Ns) -> String {
+    if ns.name == namespace::DEFAULT {
+        "secretbox unlock".into()
+    } else {
+        format!("secretbox --ns {} unlock", ns.name)
+    }
+}
+
 fn request(s: &mut UnixStream, req: &Request) -> Result<Response> {
     send(s, req)?;
     match recv(s)? {
@@ -61,26 +70,27 @@ fn request(s: &mut UnixStream, req: &Request) -> Result<Response> {
     }
 }
 
-fn unlock_with(dir: &Path, passphrase: zeroize::Zeroizing<String>) -> Result<()> {
-    let mut s = connect(dir, true)?.ok_or("daemon unavailable")?;
+fn unlock_with(ns: &Ns, passphrase: zeroize::Zeroizing<String>) -> Result<()> {
+    let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
     request(&mut s, &Request::Unlock { passphrase })?;
     Ok(())
 }
 
-pub fn unlock(dir: &Path) -> Result<()> {
-    let passphrase = read_secret("passphrase: ")?;
-    unlock_with(dir, passphrase)
+pub fn unlock(ns: &Ns) -> Result<()> {
+    let passphrase = read_secret(&format!("passphrase for {}: ", ns.name))?;
+    unlock_with(ns, passphrase)
 }
 
-pub fn lock(dir: &Path) -> Result<()> {
-    if let Some(mut s) = connect(dir, false)? {
+pub fn lock(ns: &Ns) -> Result<()> {
+    if let Some(mut s) = connect(ns, false)? {
         request(&mut s, &Request::Lock)?;
     }
     Ok(())
 }
 
-pub fn status(dir: &Path) -> Result<()> {
-    let Some(mut s) = connect(dir, false)? else {
+pub fn status(ns: &Ns) -> Result<()> {
+    print!("{}: ", ns.name);
+    let Some(mut s) = connect(ns, false)? else {
         println!("locked (daemon not running)");
         return Ok(());
     };
@@ -101,15 +111,16 @@ pub fn status(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn exec_request(dir: &Path, profile: &str) -> Result<(UnixStream, Response)> {
-    let mut s = connect(dir, true)?.ok_or("daemon unavailable")?;
+fn exec_request(ns: &Ns, profile: &str) -> Result<(UnixStream, Response)> {
+    let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
     let profile = profile.into();
     let resp = request(&mut s, &Request::Exec { profile })?;
     Ok((s, resp))
 }
 
-/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 요청한 부모 프로세스 이름을 보여 준다.
-fn gui_unlock(dir: &Path, profile: &str) -> Result<()> {
+/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .secretbox가 다른 네임스페이스를
+/// 요청할 수 있으므로, 사용자가 판단하도록 네임스페이스·프로젝트 경로·요청한 부모 프로세스를 보여 준다.
+fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
     let parent = Command::new("ps")
         .args([
             "-o",
@@ -120,17 +131,22 @@ fn gui_unlock(dir: &Path, profile: &str) -> Result<()> {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
-    let mut message =
-        format!("Unlock secretbox to run profile \"{profile}\" (requested by {parent}).");
+    let project = std::env::current_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_default();
+    let what = format!(
+        "namespace \"{}\" to run profile \"{profile}\"\nproject: {project}\nrequested by: {parent}",
+        ns.name
+    );
+    let mut message = format!("Unlock secretbox {what}");
     let mut last = None;
     for _ in 0..3 {
-        let passphrase =
-            prompt::ask(&message).map_err(|e| format!("locked: run `secretbox unlock` ({e})"))?;
-        match unlock_with(dir, passphrase) {
+        let passphrase = prompt::ask(&message)
+            .map_err(|e| format!("locked: run `{}` ({e})", unlock_hint(ns)))?;
+        match unlock_with(ns, passphrase) {
             Ok(()) => return Ok(()),
             Err(e) => {
-                message =
-                    format!("Wrong passphrase. Unlock secretbox to run profile \"{profile}\".");
+                message = format!("Wrong passphrase. Unlock secretbox {what}");
                 last = Some(e);
             }
         }
@@ -140,14 +156,14 @@ fn gui_unlock(dir: &Path, profile: &str) -> Result<()> {
 
 /// 성공하면 반환하지 않는다. 이 프로세스가 프로필 명령으로 바뀌고, 임대 소켓을 물려받은
 /// 그 프로세스(와 자식들)가 모두 끝나면 데몬이 임대 종료를 감지한다.
-pub fn exec(dir: &Path, profile: &str) -> Result<()> {
-    let (mut s, mut resp) = exec_request(dir, profile)?;
+pub fn exec(ns: &Ns, profile: &str) -> Result<()> {
+    let (mut s, mut resp) = exec_request(ns, profile)?;
     if matches!(resp, Response::Locked) {
-        gui_unlock(dir, profile)?;
-        (s, resp) = exec_request(dir, profile)?;
+        gui_unlock(ns, profile)?;
+        (s, resp) = exec_request(ns, profile)?;
     }
     let Response::Exec { command, env } = resp else {
-        return Err("locked: run `secretbox unlock`".into());
+        return Err(format!("locked: run `{}`", unlock_hint(ns)).into());
     };
     // Rust는 소켓을 CLOEXEC로 만든다. 임대 소켓만 풀어 execve 뒤에도 열려 있게 한다.
     if unsafe { libc::fcntl(s.as_raw_fd(), libc::F_SETFD, 0) } != 0 {

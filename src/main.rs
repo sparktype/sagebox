@@ -5,16 +5,20 @@ mod audit;
 mod client;
 #[cfg(unix)]
 mod daemon;
+mod namespace;
 #[cfg(unix)]
 mod prompt;
 mod vault;
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use namespace::Ns;
 
 use vault::Result;
 
-const USAGE: &str = "usage:
+const USAGE: &str = "usage: secretbox [--ns <namespace>] <command>
+  secretbox ns
   secretbox init
   secretbox set <name> [--expires YYYY-MM-DD]
   secretbox rm <name>
@@ -34,9 +38,27 @@ fn main() {
 }
 
 fn run(args: &[&str]) -> Result<()> {
-    let dir = data_dir()?;
+    let (flag, args) = match args {
+        ["--ns", name, rest @ ..] => (Some(*name), rest),
+        _ => (None, args),
+    };
+    let root = data_root()?;
+    let cwd = std::env::current_dir()?;
+    let (name, source) = namespace::resolve(flag, std::env::var("SECRETBOX_NS").ok(), &cwd)?;
+    let ns = Ns {
+        dir: namespace::dir(&root, &name),
+        name,
+        source,
+    };
+    create_private_dir(&ns.dir)?;
+    let dir = &ns.dir;
     let vault = dir.join("vault");
     match args {
+        ["ns"] => {
+            println!("namespace: {} (from {})", ns.name, ns.source);
+            println!("available: {}", namespace::list(&root).join(", "));
+            Ok(())
+        }
         ["init"] => admin::init(&vault),
         ["set", name] => admin::set(&vault, name, None),
         ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
@@ -49,15 +71,15 @@ fn run(args: &[&str]) -> Result<()> {
         }
         ["profile", "rm", name] => admin::profile_rm(&vault, name),
         #[cfg(unix)]
-        ["daemon"] => daemon::serve(&dir),
+        ["daemon"] => daemon::serve(dir),
         #[cfg(unix)]
-        ["unlock"] => client::unlock(&dir),
+        ["unlock"] => client::unlock(&ns),
         #[cfg(unix)]
-        ["lock"] => client::lock(&dir),
+        ["lock"] => client::lock(&ns),
         #[cfg(unix)]
-        ["status"] => client::status(&dir),
+        ["status"] => client::status(&ns),
         #[cfg(unix)]
-        ["exec", profile] => client::exec(&dir, profile),
+        ["exec", profile] => client::exec(&ns, profile),
         #[cfg(not(unix))]
         ["daemon" | "unlock" | "lock" | "status"] | ["exec", _] => {
             Err("not supported on this platform yet".into())
@@ -66,20 +88,24 @@ fn run(args: &[&str]) -> Result<()> {
     }
 }
 
-/// `$SECRETBOX_HOME` 또는 `~/.secretbox`. 없으면 만든다 (Unix는 0700).
-fn data_dir() -> Result<PathBuf> {
-    let dir = match std::env::var_os("SECRETBOX_HOME") {
+/// `$SECRETBOX_HOME` 또는 `~/.secretbox`. default 네임스페이스는 이 디렉터리를 그대로 쓴다.
+fn data_root() -> Result<PathBuf> {
+    Ok(match std::env::var_os("SECRETBOX_HOME") {
         Some(d) => PathBuf::from(d),
         None => std::env::home_dir()
             .ok_or("cannot find home directory")?
             .join(".secretbox"),
-    };
+    })
+}
+
+/// 없으면 만든다. Unix는 중간 디렉터리까지 0700.
+fn create_private_dir(dir: &Path) -> Result<()> {
     let mut b = std::fs::DirBuilder::new();
     b.recursive(true);
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
-    b.create(&dir)?;
-    Ok(dir)
+    b.create(dir)?;
+    Ok(())
 }
 
 /// `[--env ENV=secret]... -- <command>...`
