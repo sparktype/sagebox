@@ -26,3 +26,4 @@ cargo fmt
 - Hold secret values in `secrecy`/`zeroize` types so they are wiped on drop; never log or `Debug`-print them.
 - Local IPC only (Unix domain socket, 0600). Do not open network ports.
 - New source files start with a one-line Korean comment describing their role.
+- Commit messages must follow `<type>(<scope>): <설명>` (feat, fix, docs, chore, refactor, test, …); a git hook rejects other formats.
