@@ -196,7 +196,7 @@
         <text class="tag" x="772" y="303" text-anchor="middle" fill="#eb6c36">DAEMON</text>
         <text class="nm" x="832" y="322" text-anchor="middle">secretbox 데몬</text>
         <text class="sub" x="832" y="338" text-anchor="middle">holds DEK only · sock 0600</text>
-        <text class="sub" x="832" y="352" text-anchor="middle">idle 30m · max 8h</text>
+        <text class="sub" x="832" y="352" text-anchor="middle">leases · grace 30s · max 8h</text>
 
         <!-- 볼트 (store) -->
         <rect x="1004" y="120" width="200" height="56" rx="6" fill="#f5f5f5"/>
@@ -375,7 +375,7 @@
         <text class="leg" x="600" y="676">ACTIVE</text>
       </svg>
       </div>
-      <p class="caption">데몬은 요청이 올 때마다 만료를 확인하고, 요청이 없어도 30초마다 확인해 만료된 DEK를 지웁니다. 만료 조건은 유휴 30분 또는 잠금 해제 후 8시간이고, 절전 중에도 시간이 흐르도록 벽시계로 잽니다. 감사 로그를 쓰지 못하면 <code>ARGV + ENV</code>를 보내지 않습니다. 메시지는 연결 하나에 하나씩 JSON으로 주고받고, 쓰기 방향 shutdown으로 끝을 알립니다.</p>
+      <p class="caption">데몬은 첫 <code>exec</code>나 <code>unlock</code>에서 자동으로 뜹니다. 잠겨 있으면 exec가 GUI 대화상자로 패스프레이즈를 묻습니다. exec 연결은 응답 뒤에도 닫지 않습니다. 클라이언트가 그 소켓을 물려준 채 <code>execve</code>하므로, MCP 서버가 살아 있는 동안이 곧 임대 기간입니다. 마지막 임대가 끝나고 30초가 지나거나 8시간이 되면 데몬은 DEK를 지우고 종료합니다. 감사 로그를 쓰지 못하면 <code>ARGV + ENV</code>를 보내지 않습니다.</p>
     </section>
 
     <!-- ───────────────────────── ③ 봉투 형식 ───────────────────────── -->

@@ -5,6 +5,8 @@ mod audit;
 mod client;
 #[cfg(unix)]
 mod daemon;
+#[cfg(unix)]
+mod prompt;
 mod vault;
 
 use std::collections::BTreeMap;
@@ -20,7 +22,6 @@ const USAGE: &str = "usage:
   secretbox audit verify
   secretbox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   secretbox profile rm <name>
-  secretbox daemon
   secretbox unlock | lock | status
   secretbox exec <profile>";
 

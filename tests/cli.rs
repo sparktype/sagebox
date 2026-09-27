@@ -7,6 +7,7 @@ fn sbx(home: &Path, stdin: &str, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_secretbox"))
         .args(args)
         .env("SECRETBOX_HOME", home)
+        .env("SECRETBOX_NO_GUI", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -117,16 +118,26 @@ fn admin_flow() {
     std::fs::remove_dir_all(&home).unwrap();
 }
 
-/// 테스트가 실패해도 데몬 프로세스를 정리한다.
+/// 테스트가 실패해도 자동 기동된 데몬을 lock으로 끝낸다.
 #[cfg(unix)]
-struct Daemon(std::process::Child);
+struct LockOnDrop(std::path::PathBuf);
 
 #[cfg(unix)]
-impl Drop for Daemon {
+impl Drop for LockOnDrop {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = sbx(&self.0, "", &["lock"]);
     }
+}
+
+#[cfg(unix)]
+fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
+    for _ in 0..100 {
+        if cond() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    false
 }
 
 #[cfg(unix)]
@@ -136,48 +147,38 @@ fn daemon_session_and_exec() {
 
     let home = std::env::temp_dir().join(format!("sbx-d-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
+    let _cleanup = LockOnDrop(home.clone());
     let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
+    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+    let status = || stdout(&sbx(&home, "", &["status"]));
     ok(sbx(&home, "password\npassword\n", &["init"]));
     ok(sbx(&home, "password\nghp_123\n", &["set", "gh"]));
-    ok(sbx(
-        &home,
-        "password\n",
-        &[
-            "profile",
-            "add",
-            "github",
-            "--env",
-            "GITHUB_TOKEN=gh",
-            "--",
-            "/usr/bin/env",
-        ],
-    ));
-    assert!(stderr(&sbx(&home, "", &["exec", "github"])).contains("cannot reach daemon"));
-
-    let _d = Daemon(
-        Command::new(env!("CARGO_BIN_EXE_secretbox"))
-            .arg("daemon")
-            .env("SECRETBOX_HOME", &home)
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-    let sock = home.join("sock");
-    for _ in 0..100 {
-        if sock.exists() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+    for (name, cmd) in [
+        ("github", &["/usr/bin/env"][..]),
+        ("sleeper", &["/bin/sleep", "30"]),
+    ] {
+        let mut args = vec!["profile", "add", name, "--env", "GITHUB_TOKEN=gh", "--"];
+        args.extend(cmd);
+        ok(sbx(&home, "password\n", &args));
     }
+    assert_eq!(status(), "locked (daemon not running)\n");
+
+    // 첫 exec가 데몬을 띄우고, 잠겨 있으니 GUI를 시도하다(테스트에서는 꺼 둠) unlock을 안내한다.
+    let o = sbx(&home, "", &["exec", "github"]);
+    assert!(stderr(&o).contains("secretbox unlock"), "{}", stderr(&o));
+    let sock = home.join("sock");
+    assert!(sock.exists(), "daemon was not auto-started");
+    assert_eq!(
+        std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(status(), "locked\n");
     assert!(stderr(&sbx(&home, "", &["daemon"])).contains("already running"));
 
-    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
-    assert_eq!(stdout(&sbx(&home, "", &["status"])), "locked\n");
-    assert!(stderr(&sbx(&home, "", &["exec", "github"])).contains("locked"));
     assert!(stderr(&sbx(&home, "wrong\n", &["unlock"])).contains("wrong passphrase"));
-
     ok(sbx(&home, "password\n", &["unlock"]));
-    assert!(stdout(&sbx(&home, "", &["status"])).starts_with("unlocked"));
+    assert!(status().starts_with("unlocked (0 active"), "{}", status());
+
     let o = sbx(&home, "", &["exec", "github"]);
     assert!(
         stdout(&o).contains("GITHUB_TOKEN=ghp_123"),
@@ -186,8 +187,36 @@ fn daemon_session_and_exec() {
     );
     assert!(stderr(&sbx(&home, "", &["exec", "nope"])).contains("no profile named nope"));
 
+    // 오래 사는 MCP 서버 대역: 임대가 1이 됐다가 프로세스가 죽으면 0으로 돌아온다.
+    let mut sleeper = Command::new(env!("CARGO_BIN_EXE_secretbox"))
+        .args(["exec", "sleeper"])
+        .env("SECRETBOX_HOME", &home)
+        .env("SECRETBOX_NO_GUI", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    assert!(
+        wait_until(|| status().starts_with("unlocked (1 active")),
+        "{}",
+        status()
+    );
+    sleeper.kill().unwrap();
+    sleeper.wait().unwrap();
+    assert!(
+        wait_until(|| status().starts_with("unlocked (0 active")),
+        "{}",
+        status()
+    );
+
+    // lock은 DEK를 지우고 데몬을 끝낸다.
     ok(sbx(&home, "", &["lock"]));
-    assert!(stderr(&sbx(&home, "", &["exec", "github"])).contains("locked"));
+    assert!(
+        wait_until(|| !sock.exists()),
+        "daemon still running after lock"
+    );
+    assert_eq!(status(), "locked (daemon not running)\n");
 
     let audit = std::fs::read_to_string(home.join("audit.log")).unwrap();
     assert!(!audit.contains("ghp_123"), "secret value in audit log");
@@ -195,23 +224,19 @@ fn daemon_session_and_exec() {
         audit.contains(r#""profile":"github","result":"ok: gh""#),
         "{audit}"
     );
-    assert!(audit.contains("denied: wrong passphrase"));
-    assert_eq!(audit.lines().count(), 7, "{audit}");
+    assert!(audit.contains("denied: wrong passphrase") && audit.contains(r#""op":"release""#));
     let mode = std::fs::metadata(home.join("audit.log"))
         .unwrap()
         .permissions()
         .mode();
     assert_eq!(mode & 0o777, 0o600);
-    assert_eq!(
-        std::fs::metadata(&sock).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
 
-    // 첫 unlock 전 2줄(exec locked, unlock 실패)은 MAC이 없고, 이후 5줄은 체인에 들어간다.
+    // 첫 unlock 전 2줄(exec locked, unlock 실패)은 MAC이 없다. 이후 unlock, exec×3, release×2,
+    // lock, end의 8줄이 체인에 들어간다.
     let o = sbx(&home, "password\n", &["audit", "verify"]);
     assert!(
-        stdout(&o).contains("5 verified, 2 unauthenticated"),
-        "{}{}",
+        stdout(&o).contains("8 verified, 2 unauthenticated"),
+        "{}{}\n{audit}",
         stdout(&o),
         stderr(&o)
     );
@@ -224,6 +249,5 @@ fn daemon_session_and_exec() {
     let o = sbx(&home, "password\n", &["audit", "verify"]);
     assert!(!o.status.success() && stdout(&o).contains("MAC mismatch"));
 
-    drop(_d);
     std::fs::remove_dir_all(&home).unwrap();
 }

@@ -28,7 +28,7 @@ cargo check --all-targets --target x86_64-pc-windows-msvc
 
 `SECRETBOX_HOME` overrides the data dir (`~/.secretbox`). When stdin is not a TTY, every passphrase/value prompt reads one line from stdin in order, e.g. `printf 'pw\nvalue\n' | secretbox set gh` (passphrase first, then value). `tests/cli.rs` drives the binary this way, including spawning `secretbox daemon` against a temp home.
 
-Flow: admin commands edit the vault file directly with the passphrase (never via the daemon). The daemon holds only the DEK for the session; each `exec` re-reads the vault, returns the pinned argv + env over the socket, and the client `execve`s it.
+Flow: admin commands edit the vault file directly with the passphrase (never via the daemon). The daemon is not a service: the first `exec`/`unlock` auto-spawns it, and it exits (wiping the DEK) when the session ends. Each `exec` re-reads the vault, returns the pinned argv + env, and the client clears CLOEXEC on that socket before `execve` so the MCP server inherits it as a *lease*; the daemon sees EOF when the process dies. Session ends 30s after the last lease, or at the 8h cap / `lock`. Locked `exec` asks via a GUI dialog; set `SECRETBOX_NO_GUI=1` in tests (the `sbx` helper does) so no dialog pops up. An auto-spawned daemon from a failed test exits on its own within 2–10 minutes.
 
 ## Constraints
 

@@ -1,48 +1,99 @@
-// 데몬에 unlock/lock/status/exec를 요청하고, exec는 받은 환경변수로 프로필 명령을 execve하는 클라이언트
-use std::net::Shutdown;
+// 데몬을 필요할 때 띄우고 unlock/lock/status/exec를 요청하며, exec는 임대 소켓을 물려준 채 execve하는 클라이언트
+use std::os::fd::{AsRawFd, IntoRawFd};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use crate::admin::read_secret;
 use crate::daemon::{Request, Response, recv, send};
+use crate::prompt;
 use crate::vault::Result;
 
-fn request(dir: &Path, req: &Request) -> Result<Response> {
-    let mut s = UnixStream::connect(dir.join("sock"))
-        .map_err(|e| format!("cannot reach daemon ({e}); start it with `secretbox daemon`"))?;
-    send(&mut s, req)?;
-    s.shutdown(Shutdown::Write)?;
-    match recv(&mut s)? {
+/// 데몬에 연결한다. autostart면 없을 때 띄우고 소켓이 생길 때까지 기다린다.
+fn connect(dir: &Path, autostart: bool) -> Result<Option<UnixStream>> {
+    let sock = dir.join("sock");
+    if let Ok(s) = UnixStream::connect(&sock) {
+        return Ok(Some(s));
+    }
+    if !autostart {
+        return Ok(None);
+    }
+    spawn_daemon()?;
+    for _ in 0..100 {
+        std::thread::sleep(Duration::from_millis(20));
+        if let Ok(s) = UnixStream::connect(&sock) {
+            return Ok(Some(s));
+        }
+    }
+    Err("daemon did not start".into())
+}
+
+/// double fork + setsid로 데몬을 띄운다. exec 클라이언트는 곧 MCP 서버로 바뀌어
+/// 자식을 wait하지 않으므로, 데몬을 init에 입양시켜 좀비가 남지 않게 한다.
+fn spawn_daemon() -> Result<()> {
+    let mut cmd = Command::new(std::env::current_exe()?);
+    cmd.arg("daemon")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // SAFETY: fork 이후 자식에서는 async-signal-safe 함수(fork, setsid, _exit)만 호출한다.
+    unsafe {
+        cmd.pre_exec(|| match libc::fork() {
+            -1 => Err(std::io::Error::last_os_error()),
+            0 => {
+                libc::setsid();
+                Ok(())
+            }
+            _ => libc::_exit(0),
+        });
+    }
+    cmd.spawn()?.wait()?;
+    Ok(())
+}
+
+fn request(s: &mut UnixStream, req: &Request) -> Result<Response> {
+    send(s, req)?;
+    match recv(s)? {
         Response::Error { message } => Err(message.into()),
         resp => Ok(resp),
     }
 }
 
-pub fn unlock(dir: &Path) -> Result<()> {
-    let passphrase = read_secret("passphrase: ")?;
-    request(dir, &Request::Unlock { passphrase })?;
+fn unlock_with(dir: &Path, passphrase: zeroize::Zeroizing<String>) -> Result<()> {
+    let mut s = connect(dir, true)?.ok_or("daemon unavailable")?;
+    request(&mut s, &Request::Unlock { passphrase })?;
     Ok(())
 }
 
+pub fn unlock(dir: &Path) -> Result<()> {
+    let passphrase = read_secret("passphrase: ")?;
+    unlock_with(dir, passphrase)
+}
+
 pub fn lock(dir: &Path) -> Result<()> {
-    request(dir, &Request::Lock)?;
+    if let Some(mut s) = connect(dir, false)? {
+        request(&mut s, &Request::Lock)?;
+    }
     Ok(())
 }
 
 pub fn status(dir: &Path) -> Result<()> {
-    match request(dir, &Request::Status)? {
+    let Some(mut s) = connect(dir, false)? else {
+        println!("locked (daemon not running)");
+        return Ok(());
+    };
+    match request(&mut s, &Request::Status)? {
         Response::Status {
             unlocked: false, ..
         } => println!("locked"),
         Response::Status {
-            idle_left_secs,
+            leases,
             absolute_left_secs,
             ..
         } => println!(
-            "unlocked (idle lock in {}m, hard lock in {}m)",
-            idle_left_secs / 60,
+            "unlocked ({leases} active, hard lock in {}m)",
             absolute_left_secs / 60
         ),
         _ => return Err("unexpected response".into()),
@@ -50,17 +101,59 @@ pub fn status(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 성공하면 반환하지 않는다. 이 프로세스가 프로필 명령으로 바뀐다.
+fn exec_request(dir: &Path, profile: &str) -> Result<(UnixStream, Response)> {
+    let mut s = connect(dir, true)?.ok_or("daemon unavailable")?;
+    let profile = profile.into();
+    let resp = request(&mut s, &Request::Exec { profile })?;
+    Ok((s, resp))
+}
+
+/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 요청한 부모 프로세스 이름을 보여 준다.
+fn gui_unlock(dir: &Path, profile: &str) -> Result<()> {
+    let parent = Command::new("ps")
+        .args([
+            "-o",
+            "comm=",
+            "-p",
+            &std::os::unix::process::parent_id().to_string(),
+        ])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let mut message =
+        format!("Unlock secretbox to run profile \"{profile}\" (requested by {parent}).");
+    let mut last = None;
+    for _ in 0..3 {
+        let passphrase =
+            prompt::ask(&message).map_err(|e| format!("locked: run `secretbox unlock` ({e})"))?;
+        match unlock_with(dir, passphrase) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                message =
+                    format!("Wrong passphrase. Unlock secretbox to run profile \"{profile}\".");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| "unlock failed".into()))
+}
+
+/// 성공하면 반환하지 않는다. 이 프로세스가 프로필 명령으로 바뀌고, 임대 소켓을 물려받은
+/// 그 프로세스(와 자식들)가 모두 끝나면 데몬이 임대 종료를 감지한다.
 pub fn exec(dir: &Path, profile: &str) -> Result<()> {
-    let Response::Exec { command, env } = request(
-        dir,
-        &Request::Exec {
-            profile: profile.into(),
-        },
-    )?
-    else {
-        return Err("unexpected response".into());
+    let (mut s, mut resp) = exec_request(dir, profile)?;
+    if matches!(resp, Response::Locked) {
+        gui_unlock(dir, profile)?;
+        (s, resp) = exec_request(dir, profile)?;
+    }
+    let Response::Exec { command, env } = resp else {
+        return Err("locked: run `secretbox unlock`".into());
     };
+    // Rust는 소켓을 CLOEXEC로 만든다. 임대 소켓만 풀어 execve 뒤에도 열려 있게 한다.
+    if unsafe { libc::fcntl(s.as_raw_fd(), libc::F_SETFD, 0) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let _lease = s.into_raw_fd();
     let err = Command::new(&command[0])
         .args(&command[1..])
         .envs(env.iter().map(|(k, v)| (k, v.as_str())))

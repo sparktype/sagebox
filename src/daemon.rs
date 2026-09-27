@@ -1,4 +1,4 @@
-// 세션 키(DEK)를 보관하고 Unix 소켓으로 unlock/lock/status/exec 요청을 처리하는 데몬
+// 세션 키(DEK)를 보관하고, exec로 띄운 MCP 서버들의 임대가 모두 끝나면 스스로 종료하는 데몬
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
@@ -15,9 +15,15 @@ use zeroize::Zeroizing;
 use crate::audit::{self, AuditLog};
 use crate::vault::{self, Dek, Header, Result};
 
-const IDLE_TTL: Duration = Duration::from_secs(30 * 60);
+/// 임대가 계속 남아 있어도(종료하지 않는 MCP 서버 등) 이 시간이 지나면 잠근다.
 const ABSOLUTE_TTL: Duration = Duration::from_secs(8 * 60 * 60);
-const EXPIRY_CHECK: Duration = Duration::from_secs(30);
+/// 마지막 임대가 끝난 뒤 기다리는 시간. MCP 서버·에이전트 재시작을 흡수한다.
+const LEASE_GRACE: Duration = Duration::from_secs(30);
+/// 터미널에서 unlock한 뒤 첫 임대(에이전트 실행)까지 기다리는 시간.
+const FIRST_LEASE_WAIT: Duration = Duration::from_secs(10 * 60);
+/// 잠긴 채 요청이 없으면 종료. GUI 프롬프트에 입력하는 동안은 살아 있어야 한다.
+const LOCKED_IDLE: Duration = Duration::from_secs(2 * 60);
+const CHECK_EVERY: Duration = Duration::from_secs(5);
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_MSG: usize = 1 << 20;
 
@@ -37,9 +43,10 @@ pub enum Response {
     Error {
         message: String,
     },
+    Locked,
     Status {
         unlocked: bool,
-        idle_left_secs: u64,
+        leases: usize,
         absolute_left_secs: u64,
     },
     Exec {
@@ -48,44 +55,59 @@ pub enum Response {
     },
 }
 
-/// 한 연결에 메시지 하나. 버퍼를 미리 잡아 재할당으로 평문 사본이 남지 않게 한다.
+/// 길이(u32 LE) + JSON. exec 연결은 임대로 열어 두므로 EOF로 메시지 끝을 알릴 수 없다.
+/// 버퍼를 미리 잡아 재할당으로 평문 사본이 남지 않게 한다.
 pub fn send<T: Serialize>(s: &mut UnixStream, msg: &T) -> Result<()> {
     let mut buf = Zeroizing::new(Vec::with_capacity(MAX_MSG));
+    buf.extend_from_slice(&[0; 4]);
     serde_json::to_writer(&mut *buf, msg)?;
+    let len = u32::try_from(buf.len() - 4)?;
+    buf[..4].copy_from_slice(&len.to_le_bytes());
     s.write_all(&buf)?;
     Ok(())
 }
 
 pub fn recv<T: DeserializeOwned>(s: &mut UnixStream) -> Result<T> {
-    let mut buf = Zeroizing::new(Vec::with_capacity(MAX_MSG));
-    s.take(MAX_MSG as u64).read_to_end(&mut buf)?;
+    let mut len = [0u8; 4];
+    s.read_exact(&mut len)?;
+    let len = u32::from_le_bytes(len) as usize;
+    if len > MAX_MSG {
+        return Err("message too large".into());
+    }
+    let mut buf = Zeroizing::new(vec![0u8; len]);
+    s.read_exact(&mut buf)?;
     Ok(serde_json::from_slice(&buf)?)
 }
 
 struct Session {
     dek: Dek,
     unlocked_at: SystemTime,
-    last_used: SystemTime,
 }
 
-/// 유휴 30분 또는 잠금 해제 후 8시간 중 하나라도 넘으면 만료.
-/// 벽시계를 쓰는 이유는 단조 시계(Instant)가 절전 중에 멈추기 때문이다. 시계가 뒤로 가면 잠근다.
-fn session_expired(unlocked_at: SystemTime, last_used: SystemTime, now: SystemTime) -> bool {
-    match (
-        now.duration_since(unlocked_at),
-        now.duration_since(last_used),
-    ) {
-        (Ok(total), Ok(idle)) => total >= ABSOLUTE_TTL || idle >= IDLE_TTL,
-        _ => true,
-    }
+struct State {
+    session: Option<Session>,
+    /// 살아 있는 exec 임대 수 (= secretbox로 띄운 MCP 서버 수)
+    leases: usize,
+    /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
+    idle_since: SystemTime,
+    had_lease: bool,
 }
 
-fn expire(session: &mut Option<Session>) {
-    if let Some(s) = session
-        && session_expired(s.unlocked_at, s.last_used, SystemTime::now())
-    {
-        *session = None; // Dek는 drop될 때 0으로 지워진다.
-    }
+/// 데몬이 DEK를 지우고 종료해야 하는가. 시간은 벽시계로 잰다(단조 시계는 절전 중 멈춘다).
+/// 시계가 뒤로 가면 종료한다.
+fn should_exit(st: &State, now: SystemTime) -> bool {
+    let since = |t: SystemTime| now.duration_since(t).unwrap_or(Duration::MAX);
+    let idle = st.leases == 0
+        && since(st.idle_since)
+            >= match (&st.session, st.had_lease) {
+                (None, _) => LOCKED_IDLE,
+                (Some(_), true) => LEASE_GRACE,
+                (Some(_), false) => FIRST_LEASE_WAIT,
+            };
+    idle || st
+        .session
+        .as_ref()
+        .is_some_and(|s| since(s.unlocked_at) >= ABSOLUTE_TTL)
 }
 
 /// 연결한 프로세스의 (uid, pid).
@@ -131,10 +153,20 @@ fn peer(s: &UnixStream) -> Result<(u32, i32)> {
     }
 }
 
+/// 응답을 보낸 뒤 연결을 어떻게 할지.
+enum Next {
+    Close,
+    /// 연결을 열어 둔 채 EOF(= MCP 서버 종료)를 기다린다.
+    Lease(i32),
+    /// lock: 응답 후 DEK를 지우고 종료한다.
+    Exit,
+}
+
 struct Daemon {
     vault: PathBuf,
+    sock: PathBuf,
     audit_log: Mutex<AuditLog>,
-    session: Arc<Mutex<Option<Session>>>,
+    state: Mutex<State>,
 }
 
 pub fn serve(dir: &Path) -> Result<()> {
@@ -142,58 +174,88 @@ pub fn serve(dir: &Path) -> Result<()> {
     if UnixStream::connect(&sock).is_ok() {
         return Err("daemon already running".into());
     }
-    let _ = std::fs::remove_file(&sock); // 이전 실행이 남긴 소켓
+    // ponytail: 두 클라이언트가 동시에 데몬을 띄우면 늦게 bind한 쪽이 소켓을 가져가고,
+    // 먼저 뜬 쪽은 요청을 못 받은 채 LOCKED_IDLE 뒤 종료한다. 문제되면 flock으로 직렬화
+    let _ = std::fs::remove_file(&sock);
     let listener = UnixListener::bind(&sock)?;
     std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
 
-    let d = Daemon {
+    let d = Arc::new(Daemon {
         vault: dir.join("vault"),
+        sock,
         audit_log: Mutex::new(AuditLog::new(dir.join("audit.log"))),
-        session: Arc::new(Mutex::new(None)),
-    };
-    let session = d.session.clone();
+        state: Mutex::new(State {
+            session: None,
+            leases: 0,
+            idle_since: SystemTime::now(),
+            had_lease: false,
+        }),
+    });
+    let checker = d.clone();
     std::thread::spawn(move || {
         loop {
-            std::thread::sleep(EXPIRY_CHECK);
-            expire(&mut session.lock().unwrap());
+            std::thread::sleep(CHECK_EVERY);
+            if should_exit(&checker.state.lock().unwrap(), SystemTime::now()) {
+                checker.shutdown("expired");
+            }
         }
     });
 
-    eprintln!("secretbox daemon listening on {}", sock.display());
-    // ponytail: 요청을 한 번에 하나씩 처리한다. unlock의 KDF(수백 ms) 동안 다른 요청은 기다린다
     for conn in listener.incoming() {
-        let Ok(mut s) = conn else { continue };
-        let _ = s.set_read_timeout(Some(IO_TIMEOUT));
-        let _ = s.set_write_timeout(Some(IO_TIMEOUT));
-        let resp = d.handle(&mut s).unwrap_or_else(|e| Response::Error {
-            message: e.to_string(),
-        });
-        let _ = send(&mut s, &resp);
+        let Ok(s) = conn else { continue };
+        let d = d.clone();
+        std::thread::spawn(move || d.serve_conn(s));
     }
     Ok(())
 }
 
 impl Daemon {
-    fn handle(&self, s: &mut UnixStream) -> Result<Response> {
+    fn serve_conn(&self, mut s: UnixStream) {
+        let _ = s.set_read_timeout(Some(IO_TIMEOUT));
+        let _ = s.set_write_timeout(Some(IO_TIMEOUT));
+        let (resp, next) = self.handle(&mut s).unwrap_or_else(|e| {
+            let message = e.to_string();
+            (Response::Error { message }, Next::Close)
+        });
+        let sent = send(&mut s, &resp);
+        drop(resp); // env의 비밀 값을 바로 지운다.
+        match next {
+            Next::Close => {}
+            Next::Exit => self.shutdown("lock"),
+            Next::Lease(pid) => {
+                if sent.is_ok() {
+                    let _ = s.set_read_timeout(None);
+                    // EOF(0) 또는 오류 = 이 소켓을 가진 프로세스가 모두 사라졌다.
+                    let mut buf = [0u8; 64];
+                    while matches!(s.read(&mut buf), Ok(n) if n > 0) {}
+                }
+                self.release(pid);
+            }
+        }
+    }
+
+    fn handle(&self, s: &mut UnixStream) -> Result<(Response, Next)> {
         let (uid, pid) = peer(s)?;
         if uid != unsafe { libc::geteuid() } {
             self.audit(pid, "connect", None, &format!("denied: uid {uid}"))?;
             return Err("permission denied".into());
         }
         let req: Request = recv(s)?;
-        let mut session = self.session.lock().unwrap();
-        expire(&mut session);
+        let mut st = self.state.lock().unwrap();
+        let now = SystemTime::now();
+        if st.session.is_none() {
+            st.idle_since = now;
+        }
         match req {
-            Request::Status => Ok(status(&session)),
+            Request::Status => Ok((status(&st, now), Next::Close)),
             Request::Lock => {
-                *session = None;
                 self.audit(pid, "lock", None, "ok")?;
-                Ok(Response::Ok)
+                Ok((Response::Ok, Next::Exit))
             }
             Request::Unlock { passphrase } => {
                 let result = self.unlock(passphrase.as_bytes());
                 if let Ok(dek) = &result {
-                    // 첫 unlock부터 감사 로그에 MAC 체인을 건다. 키는 lock 뒤에도 유지된다.
+                    // 감사 키는 데몬(= 세션)이 끝날 때까지 유지된다.
                     self.audit_log
                         .lock()
                         .unwrap()
@@ -204,19 +266,19 @@ impl Daemon {
                     Err(e) => format!("denied: {e}"),
                 };
                 self.audit(pid, "unlock", None, &outcome)?;
-                let now = SystemTime::now();
-                *session = Some(Session {
+                st.session = Some(Session {
                     dek: result?,
                     unlocked_at: now,
-                    last_used: now,
                 });
-                Ok(Response::Ok)
+                st.idle_since = now;
+                Ok((Response::Ok, Next::Close))
             }
             Request::Exec { profile } => {
-                let result = match session.as_mut() {
-                    None => Err("locked (run `secretbox unlock`)".into()),
-                    Some(sess) => self.exec(&sess.dek, &profile),
+                let Some(sess) = &st.session else {
+                    self.audit(pid, "exec", Some(&profile), "denied: locked")?;
+                    return Ok((Response::Locked, Next::Close));
                 };
+                let result = self.exec(&sess.dek, &profile);
                 let outcome = match &result {
                     Ok((_, names)) => format!("ok: {}", names.join(",")),
                     Err(e) => format!("denied: {e}"),
@@ -224,12 +286,29 @@ impl Daemon {
                 // 기록을 남기지 못하면 비밀을 내보내지 않는다.
                 self.audit(pid, "exec", Some(&profile), &outcome)?;
                 let (resp, _) = result?;
-                if let Some(sess) = session.as_mut() {
-                    sess.last_used = SystemTime::now();
-                }
-                Ok(resp)
+                st.leases += 1;
+                st.had_lease = true;
+                Ok((resp, Next::Lease(pid)))
             }
         }
+    }
+
+    fn release(&self, pid: i32) {
+        let mut st = self.state.lock().unwrap();
+        st.leases -= 1;
+        if st.leases == 0 {
+            st.idle_since = SystemTime::now();
+        }
+        let _ = self.audit(pid, "release", None, &format!("{} active", st.leases));
+    }
+
+    /// DEK를 지우고 소켓을 치운 뒤 프로세스를 끝낸다.
+    fn shutdown(&self, reason: &str) -> ! {
+        let mut st = self.state.lock().unwrap();
+        st.session = None; // Dek는 drop될 때 0으로 지워진다.
+        let _ = self.audit(std::process::id() as i32, "end", None, reason);
+        let _ = std::fs::remove_file(&self.sock);
+        std::process::exit(0)
     }
 
     fn unlock(&self, passphrase: &[u8]) -> Result<Dek> {
@@ -270,23 +349,16 @@ impl Daemon {
     }
 }
 
-fn status(session: &Option<Session>) -> Response {
-    let now = SystemTime::now();
-    let left = |since: SystemTime, ttl: Duration| {
-        ttl.saturating_sub(now.duration_since(since).unwrap_or(ttl))
+fn status(st: &State, now: SystemTime) -> Response {
+    let absolute_left_secs = st.session.as_ref().map_or(0, |s| {
+        ABSOLUTE_TTL
+            .saturating_sub(now.duration_since(s.unlocked_at).unwrap_or(ABSOLUTE_TTL))
             .as_secs()
-    };
-    match session {
-        None => Response::Status {
-            unlocked: false,
-            idle_left_secs: 0,
-            absolute_left_secs: 0,
-        },
-        Some(s) => Response::Status {
-            unlocked: true,
-            idle_left_secs: left(s.last_used, IDLE_TTL),
-            absolute_left_secs: left(s.unlocked_at, ABSOLUTE_TTL),
-        },
+    });
+    Response::Status {
+        unlocked: st.session.is_some(),
+        leases: st.leases,
+        absolute_left_secs,
     }
 }
 
@@ -295,21 +367,37 @@ mod tests {
     use super::*;
     use std::time::UNIX_EPOCH;
 
+    const SEC: Duration = Duration::from_secs(1);
     const MIN: Duration = Duration::from_secs(60);
 
+    fn state(unlocked: bool, leases: usize, had_lease: bool, t0: SystemTime) -> State {
+        State {
+            session: unlocked.then(|| Session {
+                dek: Zeroizing::new([0; 32]),
+                unlocked_at: t0,
+            }),
+            leases,
+            idle_since: t0,
+            had_lease,
+        }
+    }
+
     #[test]
-    fn expiry_policy() {
+    fn exit_policy() {
         let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
-        // 방금 풀고 방금 씀
-        assert!(!session_expired(t0, t0, t0));
-        // 유휴 29분은 유지, 30분은 만료
-        assert!(!session_expired(t0, t0, t0 + 29 * MIN));
-        assert!(session_expired(t0, t0, t0 + 30 * MIN));
-        // 계속 사용해도 8시간이 되면 만료
-        let busy = t0 + 8 * 60 * MIN - MIN;
-        assert!(!session_expired(t0, busy, busy));
-        assert!(session_expired(t0, busy, busy + MIN));
-        // 시계가 뒤로 가면 만료
-        assert!(session_expired(t0, t0, t0 - MIN));
+        // 잠긴 데몬: 요청 없이 2분이면 종료
+        assert!(!should_exit(&state(false, 0, false, t0), t0 + MIN));
+        assert!(should_exit(&state(false, 0, false, t0), t0 + 2 * MIN));
+        // 터미널 unlock 후 첫 임대 전: 10분까지 기다림
+        assert!(!should_exit(&state(true, 0, false, t0), t0 + 9 * MIN));
+        assert!(should_exit(&state(true, 0, false, t0), t0 + 10 * MIN));
+        // 임대가 있으면 유지, 마지막 임대가 끝나면 30초 유예
+        assert!(!should_exit(&state(true, 2, true, t0), t0 + 60 * MIN));
+        assert!(!should_exit(&state(true, 0, true, t0), t0 + 29 * SEC));
+        assert!(should_exit(&state(true, 0, true, t0), t0 + 30 * SEC));
+        // 임대가 남아 있어도 8시간이면 종료
+        assert!(should_exit(&state(true, 1, true, t0), t0 + 8 * 60 * MIN));
+        // 시계가 뒤로 가면 종료
+        assert!(should_exit(&state(true, 1, true, t0), t0 - MIN));
     }
 }
