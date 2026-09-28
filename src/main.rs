@@ -1,4 +1,4 @@
-// 에이전트에게 비밀 정보를 안전하게 전달하는 sagevault 데몬 진입점
+// 에이전트에게 비밀 정보를 안전하게 전달하는 sagebox 데몬 진입점
 mod admin;
 mod audit;
 #[cfg(unix)]
@@ -26,28 +26,28 @@ use namespace::Ns;
 
 use vault::Result;
 
-const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
-  sgv ns
-  sgv trust | untrust [dir]
-  sgv init
-  sgv set <name> [--expires YYYY-MM-DD]
-  sgv rm <name>
-  sgv list
-  sgv audit verify
-  sgv import <mcp.json> [--keep VAR]... [--apply]
-  sgv import-env <.envrc|.env> [--keep VAR]... [--apply]
-  sgv env [--print]            (for .envrc: eval \"$(sgv env)\")
-  sgv mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
-  sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
-  sgv profile rm <name>
-  sgv unlock [--passphrase] | lock | status
-  sgv touchid enable | disable | status   (macOS)
-  sgv exec <profile>";
+const USAGE: &str = "usage: sgb [--ns <namespace>] <command>
+  sgb ns
+  sgb trust | untrust [dir]
+  sgb init
+  sgb set <name> [--expires YYYY-MM-DD]
+  sgb rm <name>
+  sgb list
+  sgb audit verify
+  sgb import <mcp.json> [--keep VAR]... [--apply]
+  sgb import-env <.envrc|.env> [--keep VAR]... [--apply]
+  sgb env [--print]            (for .envrc: eval \"$(sgb env)\")
+  sgb mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
+  sgb profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
+  sgb profile rm <name>
+  sgb unlock [--passphrase] | lock | status
+  sgb touchid enable | disable | status   (macOS)
+  sgb exec <profile>";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(&args.iter().map(String::as_str).collect::<Vec<_>>()) {
-        eprintln!("sgv: {e}");
+        eprintln!("sgb: {e}");
         std::process::exit(1);
     }
 }
@@ -59,8 +59,7 @@ fn run(args: &[&str]) -> Result<()> {
     };
     let root = data_root()?;
     let cwd = std::env::current_dir()?;
-    let (name, source, project) =
-        namespace::resolve(flag, std::env::var("SAGEVAULT_NS").ok(), &cwd)?;
+    let (name, source, project) = namespace::resolve(flag, std::env::var("SAGEBOX_NS").ok(), &cwd)?;
     let ns = Ns {
         dir: namespace::dir(&root, &name),
         name,
@@ -79,7 +78,7 @@ fn run(args: &[&str]) -> Result<()> {
         ["init"] => admin::init(&vault),
         ["trust"] => {
             let dir = ns.project.as_ref().ok_or(
-                "trust needs a .sagevault file naming a non-default namespace in this directory or above",
+                "trust needs a .sagebox file naming a non-default namespace in this directory or above",
             )?;
             admin::trust(&vault, dir)?;
             println!("trusted {} for namespace {}", dir.display(), ns.name);
@@ -89,7 +88,7 @@ fn run(args: &[&str]) -> Result<()> {
             let dir = ns
                 .project
                 .as_ref()
-                .ok_or("no .sagevault project here; use `untrust <dir>`")?;
+                .ok_or("no .sagebox project here; use `untrust <dir>`")?;
             admin::untrust(&vault, &dir.display().to_string())
         }
         ["untrust", dir] => admin::untrust(&vault, dir),
@@ -175,13 +174,13 @@ fn run(args: &[&str]) -> Result<()> {
     }
 }
 
-/// `$SAGEVAULT_HOME` 또는 `~/.sagevault`. default 네임스페이스는 이 디렉터리를 그대로 쓴다.
+/// `$SAGEBOX_HOME` 또는 `~/.sagebox`. default 네임스페이스는 이 디렉터리를 그대로 쓴다.
 fn data_root() -> Result<PathBuf> {
-    Ok(match std::env::var_os("SAGEVAULT_HOME") {
+    Ok(match std::env::var_os("SAGEBOX_HOME") {
         Some(d) => PathBuf::from(d),
         None => std::env::home_dir()
             .ok_or("cannot find home directory")?
-            .join(".sagevault"),
+            .join(".sagebox"),
     })
 }
 

@@ -321,7 +321,7 @@ mod tests {
         let key = super::se_create().unwrap();
         let (epk, shared) = super::ephemeral_ecdh(&key.public).unwrap();
         let again =
-            super::se_ecdh(&key.blob, &epk, "sagevault test: Secure Enclave round trip").unwrap();
+            super::se_ecdh(&key.blob, &epk, "sagebox test: Secure Enclave round trip").unwrap();
         assert_eq!(*shared, *again);
     }
 

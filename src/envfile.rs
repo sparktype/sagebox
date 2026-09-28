@@ -1,4 +1,4 @@
-// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮기고, direnv가 `eval "$(sgv env)"`로 불러오게 하는 모듈
+// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮기고, direnv가 `eval "$(sgb env)"`로 불러오게 하는 모듈
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -9,7 +9,7 @@ use crate::namespace;
 use crate::vault::{self, Result, Vault};
 
 /// .envrc에 넣는 줄. 첫 비밀 줄이 있던 자리에 들어가 뒤쪽 줄의 참조 순서를 지킨다.
-const EVAL_LINE: &str = "eval \"$(sgv env)\"";
+const EVAL_LINE: &str = "eval \"$(sgb env)\"";
 
 fn valid_var(name: &str) -> bool {
     let mut chars = name.chars();
@@ -61,7 +61,7 @@ pub fn namespace_for(dir: &Path) -> Result<String> {
         .take(32)
         .collect();
     namespace::validate(&name).map_err(|_| {
-        format!("cannot derive a namespace from {base:?}; add a .sagevault file first")
+        format!("cannot derive a namespace from {base:?}; add a .sagebox file first")
     })?;
     Ok(name)
 }
@@ -79,7 +79,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
     let text = Zeroizing::new(std::fs::read_to_string(&file)?);
     let lines: Vec<&str> = text.lines().collect();
 
-    let marker = project.join(".sagevault");
+    let marker = project.join(".sagebox");
     let (ns, has_marker) = if marker.is_file() {
         (
             namespace::parse_file(&std::fs::read_to_string(&marker)?)?,
@@ -199,7 +199,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
     Ok(())
 }
 
-/// 새 네임스페이스는 `sgv env`가 매번 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
+/// 새 네임스페이스는 `sgb env`가 매번 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
 #[cfg(target_os = "macos")]
 fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
     let result = vault::Header::parse(&bytes).and_then(|(mut h, _)| {
@@ -207,7 +207,7 @@ fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
         vault::seal(&h, v, dek)
     });
     result.unwrap_or_else(|e| {
-        eprintln!("sgv: could not enable Touch ID ({e}); `sgv env` will ask for the passphrase");
+        eprintln!("sgb: could not enable Touch ID ({e}); `sgb env` will ask for the passphrase");
         bytes
     })
 }
@@ -254,13 +254,13 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-/// `sgv env`: 매번 사용자 확인(Touch ID, 없으면 패스프레이즈)을 거쳐 `export` 문을 출력한다.
+/// `sgb env`: 매번 사용자 확인(Touch ID, 없으면 패스프레이즈)을 거쳐 `export` 문을 출력한다.
 /// 데몬 세션을 쓰지 않으므로, 세션이 풀려 있어도 에이전트가 몰래 꺼낼 수 없다.
 #[cfg(unix)]
 pub fn export(ns: &namespace::Ns, allow_tty: bool) -> Result<()> {
     use std::io::IsTerminal;
     if std::io::stdout().is_terminal() && !allow_tty {
-        return Err("refusing to print secrets to a terminal; use it as `eval \"$(sgv env)\"` in .envrc (or pass --print)".into());
+        return Err("refusing to print secrets to a terminal; use it as `eval \"$(sgb env)\"` in .envrc (or pass --print)".into());
     }
     let vault_path = ns.dir.join("vault");
     let file = std::fs::read(&vault_path)?;
@@ -286,7 +286,7 @@ pub fn export(ns: &namespace::Ns, allow_tty: bool) -> Result<()> {
 /// 이번 호출만을 위해 DEK를 푼다. SE 슬롯이 있으면 시스템 대화상자, 없으면 패스프레이즈.
 #[cfg(unix)]
 fn fresh_dek(ns: &namespace::Ns, vault_path: &Path, file: &[u8]) -> Result<vault::Dek> {
-    let no_gui = crate::debug::flag("SAGEVAULT_NO_GUI");
+    let no_gui = crate::debug::flag("SAGEBOX_NO_GUI");
     let project = std::env::current_dir()
         .map(|d| d.display().to_string())
         .unwrap_or_default();
@@ -299,14 +299,14 @@ fn fresh_dek(ns: &namespace::Ns, vault_path: &Path, file: &[u8]) -> Result<vault
         match crate::touchid::unlock(vault_path, &what) {
             Ok(Some(dek)) => return Ok(dek),
             Ok(None) => {}
-            Err(e) => eprintln!("sgv: Touch ID failed ({e}); falling back to the passphrase"),
+            Err(e) => eprintln!("sgb: Touch ID failed ({e}); falling back to the passphrase"),
         }
     }
     let _ = vault_path; // macOS 외에서는 SE 경로가 없어 쓰이지 않는다
     let pass = if no_gui {
         admin::read_secret("passphrase: ")?
     } else {
-        crate::prompt::ask(&format!("Unlock sagevault to {what}"))?
+        crate::prompt::ask(&format!("Unlock sagebox to {what}"))?
     };
     let (h, _) = vault::Header::parse(file)?;
     h.unlock_passphrase(pass.as_bytes())

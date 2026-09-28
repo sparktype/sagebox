@@ -43,7 +43,7 @@ pub enum Request {
     Status,
     Exec {
         profile: String,
-        /// .sagevault로 네임스페이스가 정해졌을 때의 프로젝트 디렉터리
+        /// .sagebox로 네임스페이스가 정해졌을 때의 프로젝트 디렉터리
         #[serde(default)]
         project: Option<String>,
     },
@@ -99,7 +99,7 @@ struct Session {
 
 struct State {
     session: Option<Session>,
-    /// 살아 있는 exec 임대 수 (= sagevault로 띄운 MCP 서버 수)
+    /// 살아 있는 exec 임대 수 (= sagebox로 띄운 MCP 서버 수)
     leases: usize,
     /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
     idle_since: SystemTime,
@@ -201,7 +201,7 @@ pub fn serve(dir: &Path) -> Result<()> {
     std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
     crate::debug::to_file(&dir.join("debug.log"));
     // 개발·디버깅용: 화면을 잠근 채 에이전트를 돌릴 때 등
-    let autolock = !crate::debug::flag("SAGEVAULT_NO_AUTOLOCK");
+    let autolock = !crate::debug::flag("SAGEBOX_NO_AUTOLOCK");
     crate::debug::log(format_args!(
         "daemon started on {} autolock={autolock}",
         sock.display()

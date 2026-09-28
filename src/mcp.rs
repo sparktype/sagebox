@@ -1,4 +1,4 @@
-// 프로필 생성과 Claude Code 등록을 한 번에 하는 `sgv mcp add`. 볼트에 없는 비밀은 그 자리에서 입력받는다.
+// 프로필 생성과 Claude Code 등록을 한 번에 하는 `sgb mcp add`. 볼트에 없는 비밀은 그 자리에서 입력받는다.
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
@@ -32,7 +32,7 @@ pub fn add(
     admin::edit(vault_path, |v| {
         if v.profiles.contains_key(server) {
             return Err(format!(
-                "profile {server} already exists (remove it with `sgv profile rm {server}`)"
+                "profile {server} already exists (remove it with `sgb profile rm {server}`)"
             )
             .into());
         }
@@ -56,7 +56,7 @@ pub fn add(
     })?;
     println!("profile {server} -> {}", argv.join(" "));
 
-    let sgv = std::env::current_exe()?.display().to_string();
+    let sgb = std::env::current_exe()?.display().to_string();
     let mut exec_args: Vec<String> = vec![];
     if ns != namespace::DEFAULT {
         exec_args.extend(["--ns".into(), ns.into()]);
@@ -64,7 +64,7 @@ pub fn add(
     exec_args.extend(["exec".into(), server.into()]);
 
     let registered = Command::new("claude")
-        .args(["mcp", "add", "-s", scope, server, "--", &sgv])
+        .args(["mcp", "add", "-s", scope, server, "--", &sgb])
         .args(&exec_args)
         .status();
     match registered {
@@ -74,7 +74,7 @@ pub fn add(
         ),
         Err(_) => println!("claude CLI not found; add the config below to your MCP client."),
     }
-    let snippet = json!({ server: { "command": sgv, "args": exec_args } });
+    let snippet = json!({ server: { "command": sgb, "args": exec_args } });
     println!(
         "config for other MCP clients:\n{}",
         serde_json::to_string_pretty(&snippet)?

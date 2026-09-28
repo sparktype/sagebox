@@ -1,4 +1,4 @@
-// SAGEVAULT_DEBUG=1일 때만 판단 과정을 남기는 디버그 로그. 호출하는 쪽은 비밀 값·패스프레이즈를 넘기지 않는다.
+// SAGEBOX_DEBUG=1일 때만 판단 과정을 남기는 디버그 로그. 호출하는 쪽은 비밀 값·패스프레이즈를 넘기지 않는다.
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -13,7 +13,7 @@ pub fn flag(name: &str) -> bool {
 
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| flag("SAGEVAULT_DEBUG"))
+    *ON.get_or_init(|| flag("SAGEBOX_DEBUG"))
 }
 
 /// 데몬은 stderr가 /dev/null이라 파일(0600)로 남긴다. 설정하지 않으면 stderr로 쓴다.
@@ -43,6 +43,6 @@ pub fn log(msg: std::fmt::Arguments) {
         Some(f) => {
             let _ = writeln!(f.lock().unwrap(), "{line}");
         }
-        None => eprintln!("sgv debug: {line}"),
+        None => eprintln!("sgb debug: {line}"),
     }
 }

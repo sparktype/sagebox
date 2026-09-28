@@ -1,11 +1,11 @@
 [package]
-name = "sagevault"
+name = "sagebox"
 version = "0.1.0"
 edition = "2024"
 
-# 패키지는 sagevault, 실행 명령은 짧게 sgv
+# 패키지는 sagebox, 실행 명령은 짧게 sgb
 [[bin]]
-name = "sgv"
+name = "sgb"
 path = "src/main.rs"
 
 [dependencies]

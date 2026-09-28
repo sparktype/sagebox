@@ -1,4 +1,4 @@
-// MCP 설정(mcpServers)의 평문 비밀을 볼트로 옮기고, 설정을 `sgv exec <프로필>`로 바꿔 쓰는 가져오기
+// MCP 설정(mcpServers)의 평문 비밀을 볼트로 옮기고, 설정을 `sgb exec <프로필>`로 바꿔 쓰는 가져오기
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -117,15 +117,15 @@ struct Plan {
     kept: Vec<String>,
 }
 
-fn plan(config: &Value, keep: &[&str], sgv: &Path) -> Result<(Vec<Plan>, Vec<String>)> {
+fn plan(config: &Value, keep: &[&str], sgb: &Path) -> Result<(Vec<Plan>, Vec<String>)> {
     let servers = config["mcpServers"]
         .as_object()
         .ok_or("no \"mcpServers\" object in this file")?;
     let (mut plans, mut skipped) = (vec![], vec![]);
     for (server, def) in servers {
         let cmd = def["command"].as_str().unwrap_or_default();
-        if Path::new(cmd) == sgv || Path::new(cmd).file_name() == Some("sgv".as_ref()) {
-            skipped.push(format!("{server}: already managed by sgv"));
+        if Path::new(cmd) == sgb || Path::new(cmd).file_name() == Some("sgb".as_ref()) {
+            skipped.push(format!("{server}: already managed by sgb"));
             continue;
         }
         let env = def["env"].as_object();
@@ -172,8 +172,8 @@ pub fn run(
     let text = Zeroizing::new(std::fs::read_to_string(file)?);
     // ponytail: serde_json Value 안의 평문 값은 drop 때 지워지지 않는다. 일회성 관리 명령이라 프로세스 종료로 갈음한다
     let mut config: Value = serde_json::from_str(&text)?;
-    let sgv = std::env::current_exe()?;
-    let (plans, skipped) = plan(&config, keep, &sgv)?;
+    let sgb = std::env::current_exe()?;
+    let (plans, skipped) = plan(&config, keep, &sgb)?;
 
     for p in &plans {
         println!("{}: profile -> {}", p.server, p.command.join(" "));
@@ -242,7 +242,7 @@ pub fn run(
         let def = &mut config["mcpServers"][&p.server];
         let mut args = ns_args.to_vec();
         args.extend(["exec".to_string(), p.server.clone()]);
-        def["command"] = json!(sgv.display().to_string());
+        def["command"] = json!(sgb.display().to_string());
         def["args"] = json!(args);
         if let Some(env) = def["env"].as_object_mut() {
             for (var, _, _) in &p.moved {

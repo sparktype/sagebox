@@ -1,4 +1,4 @@
-// 임시 SAGEVAULT_HOME에서 관리 CLI 흐름(init → set → profile → list/rm)을 실행해 보는 통합 테스트
+// 임시 SAGEBOX_HOME에서 관리 CLI 흐름(init → set → profile → list/rm)을 실행해 보는 통합 테스트
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -7,14 +7,14 @@ fn sbx(home: &Path, stdin: &str, args: &[&str]) -> Output {
     sbx_in(Path::new("."), home, stdin, args)
 }
 
-/// cwd에서 실행한다. 네임스페이스는 cwd 위의 .sagevault 파일로도 정해진다.
+/// cwd에서 실행한다. 네임스페이스는 cwd 위의 .sagebox 파일로도 정해진다.
 fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_sgv"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sgb"))
         .args(args)
         .current_dir(cwd)
-        .env("SAGEVAULT_HOME", home)
-        .env("SAGEVAULT_NO_GUI", "1")
-        .env("SAGEVAULT_NO_AUTOLOCK", "1")
+        .env("SAGEBOX_HOME", home)
+        .env("SAGEBOX_NO_GUI", "1")
+        .env("SAGEBOX_NO_AUTOLOCK", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -172,7 +172,7 @@ fn daemon_session_and_exec() {
 
     // 첫 exec가 데몬을 띄우고, 잠겨 있으니 GUI를 시도하다(테스트에서는 꺼 둠) unlock을 안내한다.
     let o = sbx(&home, "", &["exec", "github"]);
-    assert!(stderr(&o).contains("sgv unlock"), "{}", stderr(&o));
+    assert!(stderr(&o).contains("sgb unlock"), "{}", stderr(&o));
     let sock = home.join("sock");
     assert!(sock.exists(), "daemon was not auto-started");
     assert_eq!(
@@ -199,11 +199,11 @@ fn daemon_session_and_exec() {
     assert!(stderr(&sbx(&home, "", &["exec", "nope"])).contains("no profile named nope"));
 
     // 오래 사는 MCP 서버 대역: 임대가 1이 됐다가 프로세스가 죽으면 0으로 돌아온다.
-    let mut sleeper = Command::new(env!("CARGO_BIN_EXE_sgv"))
+    let mut sleeper = Command::new(env!("CARGO_BIN_EXE_sgb"))
         .args(["exec", "sleeper"])
-        .env("SAGEVAULT_HOME", &home)
-        .env("SAGEVAULT_NO_GUI", "1")
-        .env("SAGEVAULT_NO_AUTOLOCK", "1")
+        .env("SAGEBOX_HOME", &home)
+        .env("SAGEBOX_NO_GUI", "1")
+        .env("SAGEBOX_NO_AUTOLOCK", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -274,7 +274,7 @@ fn namespaces_are_isolated() {
     let _ = std::fs::remove_dir_all(&base);
     let (home, project) = (base.join("home"), base.join("acme-repo/src"));
     std::fs::create_dir_all(&project).unwrap();
-    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"acme\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagebox"), "namespace = \"acme\"\n").unwrap();
     let _lock_default = LockOnDrop(home.clone(), "default");
     let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
     let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
@@ -309,7 +309,7 @@ fn namespaces_are_isolated() {
     assert!(home.join("ns/acme/vault").is_file() && home.join("vault").is_file());
 
     let o = sbx_in(&project, &home, "", &["ns"]);
-    assert!(stdout(&o).contains("namespace: acme (from ") && stdout(&o).contains(".sagevault)"));
+    assert!(stdout(&o).contains("namespace: acme (from ") && stdout(&o).contains(".sagebox)"));
     assert!(
         stdout(&o).contains("available: default, acme"),
         "{}",
@@ -353,7 +353,7 @@ fn namespaces_are_isolated() {
     // default는 여전히 잠겨 있다. 프로젝트 안에서 --ns로 넘어가도 마찬가지다.
     let o = sbx(&home, "", &["exec", "github"]);
     assert!(
-        stderr(&o).contains("locked: run `sgv unlock`"),
+        stderr(&o).contains("locked: run `sgb unlock`"),
         "{}",
         stderr(&o)
     );
@@ -361,7 +361,7 @@ fn namespaces_are_isolated() {
     assert!(stderr(&o).contains("locked"), "{}", stderr(&o));
     assert!(stdout(&sbx_in(&project, &home, "", &["status"])).starts_with("acme: unlocked"));
 
-    // 저장소가 .sagevault를 다른 네임스페이스로 바꾸면 그쪽 신뢰 목록에는 없으므로 거부된다.
+    // 저장소가 .sagebox를 다른 네임스페이스로 바꾸면 그쪽 신뢰 목록에는 없으므로 거부된다.
     ok(sbx(
         &home,
         "otherpass\notherpass\n",
@@ -369,10 +369,10 @@ fn namespaces_are_isolated() {
     ));
     ok(sbx(&home, "otherpass\n", &["--ns", "other", "unlock"]));
     let _lock_other = LockOnDrop(home.clone(), "other");
-    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"other\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagebox"), "namespace = \"other\"\n").unwrap();
     let o = sbx_in(&project, &home, "", &["exec", "github"]);
     assert!(stderr(&o).contains("is not trusted"), "{}", stderr(&o));
-    std::fs::write(base.join("acme-repo/.sagevault"), "namespace = \"acme\"\n").unwrap();
+    std::fs::write(base.join("acme-repo/.sagebox"), "namespace = \"acme\"\n").unwrap();
 
     // 경로 탈출과 잘못된 이름은 거부한다.
     assert!(stderr(&sbx(&home, "", &["--ns", "../x", "list"])).contains("invalid namespace"));
@@ -454,7 +454,7 @@ fn import_mcp_config() {
     );
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
     let gh = &v["mcpServers"]["github"];
-    assert!(gh["command"].as_str().unwrap().ends_with("sgv"));
+    assert!(gh["command"].as_str().unwrap().ends_with("sgb"));
     assert_eq!(gh["args"], serde_json::json!(["exec", "github"]));
     assert_eq!(gh["env"], serde_json::json!({"LOG_LEVEL": "info"}));
     assert!(v["mcpServers"]["slack"].get("env").is_none());
@@ -465,7 +465,7 @@ fn import_mcp_config() {
 
     // 다시 실행하면 이미 관리 중이라 건너뛴다.
     let out = stdout(&sbx(&home, "", &["import", cfg_s]));
-    assert!(out.contains("github: already managed by sgv"), "{out}");
+    assert!(out.contains("github: already managed by sgb"), "{out}");
 
     // 옮긴 비밀이 실제로 exec에 주입된다.
     ok(sbx(&home, "password\n", &["unlock"]));
@@ -484,11 +484,11 @@ fn import_mcp_config() {
 #[cfg(unix)]
 fn sbx_with_fake_claude(home: &Path, bin: &Path, stdin: &str, args: &[&str]) -> Output {
     let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
-    let mut child = Command::new(env!("CARGO_BIN_EXE_sgv"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sgb"))
         .args(args)
-        .env("SAGEVAULT_HOME", home)
-        .env("SAGEVAULT_NO_GUI", "1")
-        .env("SAGEVAULT_NO_AUTOLOCK", "1")
+        .env("SAGEBOX_HOME", home)
+        .env("SAGEBOX_NO_GUI", "1")
+        .env("SAGEBOX_NO_AUTOLOCK", "1")
         .env("PATH", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -520,7 +520,7 @@ fn mcp_add_registers_with_claude() {
     let _cleanup = LockOnDrop(home.clone(), "default");
     let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
     let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
-    let sgv = std::fs::canonicalize(env!("CARGO_BIN_EXE_sgv")).unwrap();
+    let sgb = std::fs::canonicalize(env!("CARGO_BIN_EXE_sgb")).unwrap();
     ok(sbx(&home, "password\npassword\n", &["init"]));
 
     // 없는 비밀(demo_token)은 패스프레이즈 다음에 그 자리에서 입력받는다. 명령 `env`는 절대경로로 고정된다.
@@ -561,7 +561,7 @@ fn mcp_add_registers_with_claude() {
         "user",
         "demo",
         "--",
-        sgv.to_str().unwrap(),
+        sgb.to_str().unwrap(),
         "exec",
         "demo",
     ];
@@ -618,7 +618,7 @@ fn mcp_add_registers_with_claude() {
         "project",
         "gh",
         "--",
-        sgv.to_str().unwrap(),
+        sgb.to_str().unwrap(),
         "--ns",
         "acme",
         "exec",
@@ -672,15 +672,15 @@ fn import_envrc_and_export() {
     let rewritten = std::fs::read_to_string(&envrc).unwrap();
     assert_eq!(
         rewritten,
-        "# demo\neval \"$(sgv env)\"\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\n"
+        "# demo\neval \"$(sgb env)\"\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\n"
     );
     assert_eq!(
-        std::fs::read_to_string(project.join(".sagevault")).unwrap(),
+        std::fs::read_to_string(project.join(".sagebox")).unwrap(),
         "namespace = \"demo-proj\"\n"
     );
     assert!(home.join("ns/demo-proj/vault").is_file());
 
-    // 프로젝트 안의 sgv env는 매번 확인(여기서는 패스프레이즈) 후 export 문을 낸다.
+    // 프로젝트 안의 sgb env는 매번 확인(여기서는 패스프레이즈) 후 export 문을 낸다.
     let o = sbx_in(&project, &home, "projpass1\n", &["env"]);
     let out = stdout(&o);
     assert!(

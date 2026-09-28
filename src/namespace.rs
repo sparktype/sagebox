@@ -1,20 +1,20 @@
-// 프로젝트별 네임스페이스(볼트·세션·감사 로그 분리)를 인자·환경변수·.sagevault 파일로 결정하는 모듈
+// 프로젝트별 네임스페이스(볼트·세션·감사 로그 분리)를 인자·환경변수·.sagebox 파일로 결정하는 모듈
 use std::path::{Path, PathBuf};
 
 use crate::vault::Result;
 
 pub const DEFAULT: &str = "default";
 
-/// 결정된 네임스페이스. source는 어디서 정해졌는지(--ns, SAGEVAULT_NS, .sagevault 경로, default).
+/// 결정된 네임스페이스. source는 어디서 정해졌는지(--ns, SAGEBOX_NS, .sagebox 경로, default).
 pub struct Ns {
     pub name: String,
     pub source: String,
     pub dir: PathBuf,
-    /// .sagevault 파일로 이름 있는 네임스페이스가 정해졌을 때 그 파일이 있는 디렉터리(정규화).
+    /// .sagebox 파일로 이름 있는 네임스페이스가 정해졌을 때 그 파일이 있는 디렉터리(정규화).
     /// 이 경로는 그 네임스페이스에 신뢰 등록(`trust`)돼 있어야 exec가 허용된다.
     pub project: Option<PathBuf>,
 }
-const FILE: &str = ".sagevault";
+const FILE: &str = ".sagebox";
 
 /// 디렉터리 이름이 되므로 경로 탈출을 막고, Unix 소켓 경로 길이(macOS 104바이트) 안에 들게 짧게 제한한다.
 pub fn validate(name: &str) -> Result<()> {
@@ -51,7 +51,7 @@ pub(crate) fn parse_file(content: &str) -> Result<String> {
     Err("no `namespace = \"...\"` line".into())
 }
 
-/// start부터 위로 올라가며 가장 가까운 .sagevault 파일을 찾는다. 디렉터리(~/.sagevault)는 무시한다.
+/// start부터 위로 올라가며 가장 가까운 .sagebox 파일을 찾는다. 디렉터리(~/.sagebox)는 무시한다.
 fn find_file(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
@@ -59,7 +59,7 @@ fn find_file(start: &Path) -> Option<PathBuf> {
         .find(|p| p.is_file())
 }
 
-/// (이름, 출처, 프로젝트 디렉터리). 순서는 --ns > SAGEVAULT_NS > .sagevault 파일 > default.
+/// (이름, 출처, 프로젝트 디렉터리). 순서는 --ns > SAGEBOX_NS > .sagebox 파일 > default.
 /// 프로젝트 디렉터리는 저장소 파일이 이름 있는 네임스페이스를 골랐을 때만 채운다.
 pub fn resolve(
     flag: Option<&str>,
@@ -69,7 +69,7 @@ pub fn resolve(
     let (name, source, project) = if let Some(n) = flag {
         (n.to_string(), "--ns".to_string(), None)
     } else if let Some(n) = env.filter(|n| !n.is_empty()) {
-        (n, "SAGEVAULT_NS".to_string(), None)
+        (n, "SAGEBOX_NS".to_string(), None)
     } else if let Some(file) = find_file(cwd) {
         let name = parse_file(&std::fs::read_to_string(&file)?)
             .map_err(|e| format!("{}: {e}", file.display()))?;

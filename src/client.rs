@@ -24,7 +24,7 @@ fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
     let len = sock.as_os_str().len();
     if len > 103 {
         return Err(format!(
-            "socket path is too long ({len} bytes, max 103): {}; set SAGEVAULT_HOME to a shorter directory",
+            "socket path is too long ({len} bytes, max 103): {}; set SAGEBOX_HOME to a shorter directory",
             sock.display()
         )
         .into());
@@ -69,9 +69,9 @@ fn spawn_daemon(ns: &str) -> Result<()> {
 /// 이 네임스페이스를 푸는 명령. default가 아니면 --ns를 붙인다.
 fn unlock_hint(ns: &Ns) -> String {
     if ns.name == namespace::DEFAULT {
-        "sgv unlock".into()
+        "sgb unlock".into()
     } else {
-        format!("sgv --ns {} unlock", ns.name)
+        format!("sgb --ns {} unlock", ns.name)
     }
 }
 
@@ -93,7 +93,7 @@ fn unlock_with(ns: &Ns, passphrase: zeroize::Zeroizing<String>) -> Result<()> {
 /// 슬롯이 없거나 취소·실패하면 false를 돌려주고, 호출한 쪽이 패스프레이즈로 넘어간다.
 #[cfg(target_os = "macos")]
 fn try_touchid(ns: &Ns, reason: &str) -> bool {
-    if crate::debug::flag("SAGEVAULT_NO_GUI") {
+    if crate::debug::flag("SAGEBOX_NO_GUI") {
         return false;
     }
     let result = crate::touchid::unlock(&ns.dir.join("vault"), reason).and_then(|dek| {
@@ -104,7 +104,7 @@ fn try_touchid(ns: &Ns, reason: &str) -> bool {
     });
     crate::debug::log(format_args!("Touch ID unlock for {}: {result:?}", ns.name));
     result.unwrap_or_else(|e| {
-        eprintln!("sgv: Touch ID unlock failed ({e}); falling back to the passphrase");
+        eprintln!("sgb: Touch ID unlock failed ({e}); falling back to the passphrase");
         false
     })
 }
@@ -116,7 +116,7 @@ fn try_touchid(_: &Ns, _: &str) -> bool {
 
 /// passphrase_only가 아니면 Touch ID를 먼저 시도한다.
 pub fn unlock(ns: &Ns, passphrase_only: bool) -> Result<()> {
-    let reason = format!("unlock sagevault namespace \"{}\"", ns.name);
+    let reason = format!("unlock sagebox namespace \"{}\"", ns.name);
     if !passphrase_only && try_touchid(ns, &reason) {
         return Ok(());
     }
@@ -162,7 +162,7 @@ fn exec_request(ns: &Ns, profile: &str) -> Result<(UnixStream, Response)> {
     Ok((s, resp))
 }
 
-/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .sagevault가 다른 네임스페이스를
+/// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .sagebox가 다른 네임스페이스를
 /// 요청할 수 있으므로, 사용자가 판단하도록 네임스페이스·프로젝트 경로·요청한 부모 프로세스를 보여 준다.
 fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
     let parent = Command::new("ps")
@@ -182,10 +182,10 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         "namespace \"{}\" to run profile \"{profile}\"\nproject: {project}\nrequested by: {parent}",
         ns.name
     );
-    if try_touchid(ns, &format!("unlock sagevault {what}")) {
+    if try_touchid(ns, &format!("unlock sagebox {what}")) {
         return Ok(());
     }
-    let mut message = format!("Unlock sagevault {what}");
+    let mut message = format!("Unlock sagebox {what}");
     let mut last = None;
     for _ in 0..3 {
         let passphrase = prompt::ask(&message)
@@ -193,7 +193,7 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         match unlock_with(ns, passphrase) {
             Ok(()) => return Ok(()),
             Err(e) => {
-                message = format!("Wrong passphrase. Unlock sagevault {what}");
+                message = format!("Wrong passphrase. Unlock sagebox {what}");
                 last = Some(e);
             }
         }
