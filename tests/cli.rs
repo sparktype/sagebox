@@ -20,12 +20,10 @@ fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // 자식이 입력을 다 읽기 전에 끝날 수 있다(예: 첫 줄에서 거부). 그때 나는 EPIPE는 정상이다.
+    if let Err(e) = child.stdin.take().unwrap().write_all(stdin.as_bytes()) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+    }
     child.wait_with_output().unwrap()
 }
 
@@ -495,12 +493,10 @@ fn sbx_with_fake_claude(home: &Path, bin: &Path, stdin: &str, args: &[&str]) -> 
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // 자식이 입력을 다 읽기 전에 끝날 수 있다(예: 첫 줄에서 거부). 그때 나는 EPIPE는 정상이다.
+    if let Err(e) = child.stdin.take().unwrap().write_all(stdin.as_bytes()) {
+        assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+    }
     child.wait_with_output().unwrap()
 }
 
