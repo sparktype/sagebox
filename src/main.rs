@@ -10,6 +10,7 @@ mod debug;
 mod import;
 #[cfg(target_os = "macos")]
 mod macos;
+mod mcp;
 mod namespace;
 #[cfg(unix)]
 mod prompt;
@@ -33,6 +34,7 @@ const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
   sgv list
   sgv audit verify
   sgv import <mcp.json> [--keep VAR]... [--apply]
+  sgv mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
   sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   sgv profile rm <name>
   sgv unlock [--passphrase] | lock | status
@@ -112,6 +114,18 @@ fn run(args: &[&str]) -> Result<()> {
         ["profile", "add", name, rest @ ..] => {
             let (env, command) = parse_profile_args(rest)?;
             admin::profile_add(&vault, name, env, command)
+        }
+        ["mcp", "add", server, rest @ ..] => {
+            // --scope만 떼어 내고 나머지는 profile add와 같은 형식으로 읽는다.
+            let dash = rest.iter().position(|a| *a == "--").unwrap_or(rest.len());
+            let mut opts = rest[..dash].to_vec();
+            let mut scope = "user";
+            if let Some(i) = opts.iter().position(|a| *a == "--scope") {
+                scope = opts.get(i + 1).ok_or("--scope needs a value")?;
+                opts.drain(i..i + 2);
+            }
+            let (env, command) = parse_profile_args(&[opts, rest[dash..].to_vec()].concat())?;
+            mcp::add(&vault, &ns.name, server, env, command, scope)
         }
         ["profile", "rm", name] => admin::profile_rm(&vault, name),
         #[cfg(unix)]

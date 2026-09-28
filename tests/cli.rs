@@ -479,3 +479,153 @@ fn import_mcp_config() {
     drop(_cleanup);
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+/// PATH 앞에 가짜 `claude`를 두고 실행한다. 가짜 claude는 받은 인자를 한 줄에 하나씩 기록한다.
+#[cfg(unix)]
+fn sbx_with_fake_claude(home: &Path, bin: &Path, stdin: &str, args: &[&str]) -> Output {
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sgv"))
+        .args(args)
+        .env("SAGEVAULT_HOME", home)
+        .env("SAGEVAULT_NO_GUI", "1")
+        .env("SAGEVAULT_NO_AUTOLOCK", "1")
+        .env("PATH", path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[cfg(unix)]
+#[test]
+fn mcp_add_registers_with_claude() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let base = std::env::temp_dir().join(format!("sbx-mcp-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (home, bin) = (base.join("home"), base.join("bin"));
+    std::fs::create_dir_all(&bin).unwrap();
+    let log = base.join("claude-args");
+    let fake = format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", log.display());
+    std::fs::write(bin.join("claude"), fake).unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let _cleanup = LockOnDrop(home.clone(), "default");
+    let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
+    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+    let sgv = std::fs::canonicalize(env!("CARGO_BIN_EXE_sgv")).unwrap();
+    ok(sbx(&home, "password\npassword\n", &["init"]));
+
+    // 없는 비밀(demo_token)은 패스프레이즈 다음에 그 자리에서 입력받는다. 명령 `env`는 절대경로로 고정된다.
+    let o = sbx_with_fake_claude(
+        &home,
+        &bin,
+        "password\nfake-token-value\n",
+        &[
+            "mcp",
+            "add",
+            "demo",
+            "--env",
+            "DEMO_TOKEN=demo_token",
+            "--",
+            "env",
+            "-0",
+        ],
+    );
+    let out = stdout(&o);
+    assert!(o.status.success(), "{}{}", out, stderr(&o));
+    assert!(
+        out.contains("profile demo -> /usr/bin/env -0") && out.contains("scope: user"),
+        "{out}"
+    );
+    assert!(
+        out.contains("\"exec\"") && !out.contains("fake-token-value"),
+        "{out}"
+    );
+    let args: Vec<String> = std::fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    let want = [
+        "mcp",
+        "add",
+        "-s",
+        "user",
+        "demo",
+        "--",
+        sgv.to_str().unwrap(),
+        "exec",
+        "demo",
+    ];
+    assert_eq!(args, want);
+    let listed = stdout(&sbx(&home, "password\n", &["list"]));
+    assert!(
+        listed.contains("demo_token")
+            && listed.contains("demo: [DEMO_TOKEN=demo_token] /usr/bin/env -0")
+    );
+
+    // 이미 있는 프로필은 거부한다.
+    let o = sbx_with_fake_claude(
+        &home,
+        &bin,
+        "password\n",
+        &["mcp", "add", "demo", "--", "env"],
+    );
+    assert!(stderr(&o).contains("profile demo already exists"));
+
+    // 이름 있는 네임스페이스는 --ns를 붙여 등록하고, --scope를 따른다.
+    ok(sbx(
+        &home,
+        "acmepass1\nacmepass1\n",
+        &["--ns", "acme", "init"],
+    ));
+    let o = sbx_with_fake_claude(
+        &home,
+        &bin,
+        "acmepass1\nacme-value\n",
+        &[
+            "--ns",
+            "acme",
+            "mcp",
+            "add",
+            "gh",
+            "--scope",
+            "project",
+            "--env",
+            "GH_TOKEN=gh",
+            "--",
+            "env",
+        ],
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
+    let args: Vec<String> = std::fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .map(String::from)
+        .collect();
+    let want = [
+        "mcp",
+        "add",
+        "-s",
+        "project",
+        "gh",
+        "--",
+        sgv.to_str().unwrap(),
+        "--ns",
+        "acme",
+        "exec",
+        "gh",
+    ];
+    assert_eq!(args, want);
+
+    drop(_cleanup);
+    std::fs::remove_dir_all(&base).unwrap();
+}

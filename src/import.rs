@@ -93,7 +93,7 @@ pub fn classify(name: &str, value: &str) -> Verdict {
 }
 
 /// PATH에서 실행 파일을 찾아 절대경로로 고정한다.
-fn resolve_command(cmd: &str) -> Result<PathBuf> {
+pub(crate) fn resolve_command(cmd: &str) -> Result<PathBuf> {
     let p = Path::new(cmd);
     if p.is_absolute() {
         return Ok(p.to_path_buf());

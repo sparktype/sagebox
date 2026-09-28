@@ -66,7 +66,8 @@
   - [x] 데몬 `UnlockKey { dek }` 요청(클라이언트가 푼 DEK를 검증 후 세션 시작)
   - [x] verify: 사용자와 실기(enable → unlock 대화상자·설명 문구 → exec → 취소 시 패스프레이즈로 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
-- [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움), `sgv mcp add` (Claude Code 등록 도우미)
+- [x] `sgv mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]` → 명령 절대경로 고정, 없는 비밀은 그 자리에서 입력, 프로필 생성, `claude mcp add` 실행(없으면 수동 안내), 설정 JSON 조각 출력 → verify: 가짜 claude로 인자 검증하는 통합 테스트
+- [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움)
 
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [x] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·사용자 확인 → 가능 (3.9단계 참고)
