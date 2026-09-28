@@ -1,5 +1,7 @@
 # sagebox
 
+<p align="center"><img src="docs/banner.svg" alt="sagebox — private secret vault for AI agents" width="100%"></p>
+
 **AI 에이전트를 위한 개인 비밀 금고.** API 키·비밀번호를 `.envrc`나 MCP 설정 파일에 평문으로 두지 않고, 암호화된 금고(vault)에 넣어 두었다가 필요한 프로그램에만 환경변수로 넣어 줍니다.
 
 - 비밀 값은 디스크에 평문으로 남지 않습니다(XChaCha20-Poly1305 + Argon2id 암호화).

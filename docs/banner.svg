@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img" aria-labelledby="t d">
+  <!-- README 상단 배너: 금고의 비밀은 프로세스 env로만, 에이전트는 이름만 본다 -->
+  <title id="t">sagebox — private secret vault for AI agents</title>
+  <desc id="d">암호화된 금고에서 나온 비밀은 실행한 프로세스의 환경변수로만 전달되고, AI 에이전트는 비밀 이름만 볼 수 있다.</desc>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="rgba(45,49,66,0.10)"/>
+    </pattern>
+    <marker id="a" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#eb6c36"/></marker>
+    <marker id="g" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#7a8399"/></marker>
+    <style>
+      .serif { font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; }
+      .sans  { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; }
+      .mono  { font-family: 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace; }
+    </style>
+  </defs>
+
+  <rect width="1280" height="360" rx="20" fill="#f5f5f5"/>
+  <rect width="1280" height="360" rx="20" fill="url(#dots)"/>
+  <rect x="0.5" y="0.5" width="1279" height="359" rx="20" fill="none" stroke="rgba(45,49,66,0.12)"/>
+
+  <!-- 왼쪽: 이름과 한 줄 설명 -->
+  <text class="mono" x="72" y="92" font-size="13" letter-spacing="3" fill="#4f5d75">LOCAL · ENCRYPTED · AUDITED</text>
+  <text class="serif" x="68" y="182" font-size="96" fill="#2d3142" letter-spacing="-2">sagebox</text>
+  <rect x="72" y="204" width="56" height="4" rx="2" fill="#eb6c36"/>
+  <text class="sans" x="72" y="248" font-size="24" fill="#2d3142">Private secret vault for AI agents</text>
+  <text class="sans" x="72" y="284" font-size="18" fill="#4f5d75">API 키를 .envrc와 MCP 설정 밖으로. 값은 프로세스에만, 에이전트는 이름만.</text>
+
+  <!-- 오른쪽: 금고 → 프로세스 env / 에이전트는 이름만 -->
+  <!-- 금고 -->
+  <g transform="translate(724,104)">
+    <rect x="0" y="0" width="152" height="152" rx="18" fill="#ffffff" stroke="#2d3142" stroke-width="2"/>
+    <rect x="12" y="12" width="128" height="128" rx="10" fill="none" stroke="rgba(45,49,66,0.25)" stroke-width="1.5"/>
+    <circle cx="76" cy="68" r="16" fill="#eb6c36"/>
+    <path d="M 70,80 L 82,80 L 86,108 L 66,108 Z" fill="#eb6c36"/>
+    <rect x="140" y="44" width="8" height="18" rx="2" fill="#2d3142"/>
+    <rect x="140" y="90" width="8" height="18" rx="2" fill="#2d3142"/>
+    <text class="mono" x="76" y="178" font-size="12" letter-spacing="2" fill="#4f5d75" text-anchor="middle">VAULT · SBX2</text>
+  </g>
+
+  <!-- 비밀 전달 (주황) -->
+  <path d="M 880,150 H 986" fill="none" stroke="#eb6c36" stroke-width="2.5" marker-end="url(#a)"/>
+  <text class="mono" x="934" y="138" font-size="11" letter-spacing="1.5" fill="#eb6c36" text-anchor="middle">EXECVE + ENV</text>
+
+  <!-- 프로세스 카드 -->
+  <g transform="translate(992,100)">
+    <rect x="0" y="0" width="224" height="104" rx="12" fill="#ffffff" stroke="#2d3142" stroke-width="1.5"/>
+    <text class="mono" x="16" y="26" font-size="11" letter-spacing="2" fill="#7a8399">PROCESS ENV</text>
+    <text class="mono" x="16" y="56" font-size="14" fill="#2d3142">GITHUB_TOKEN=<tspan fill="#eb6c36">••••••</tspan></text>
+    <text class="mono" x="16" y="82" font-size="14" fill="#2d3142">OPENAI_KEY=<tspan fill="#eb6c36">••••••••</tspan></text>
+  </g>
+
+  <!-- 에이전트는 이름만 (회색 점선) -->
+  <path d="M 880,214 H 940 Q 952,214 952,226 V 260 Q 952,272 964,272 H 986" fill="none" stroke="#7a8399" stroke-width="1.8" stroke-dasharray="6,5" marker-end="url(#g)"/>
+  <g transform="translate(992,240)">
+    <rect x="0" y="0" width="224" height="64" rx="12" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1.5"/>
+    <text class="mono" x="16" y="26" font-size="11" letter-spacing="2" fill="#7a8399">AI AGENT SEES</text>
+    <text class="mono" x="16" y="50" font-size="14" fill="#4f5d75">names only · no values</text>
+  </g>
+</svg>
