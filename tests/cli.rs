@@ -863,6 +863,10 @@ fn hook_check_asks_before_cleaning_envrc() {
         stderr(&o)
     );
 
-    assert!(stderr(&sbx(&home, "", &["hook", "fish"])).contains("unsupported shell"));
+    let script = String::from_utf8_lossy(&sbx(&home, "", &["zsh"]).stdout).into_owned();
+    assert!(
+        script.contains("hook check") && script.contains("chpwd_functions"),
+        "{script}"
+    );
     std::fs::remove_dir_all(&base).unwrap();
 }

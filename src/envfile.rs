@@ -205,7 +205,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
     Ok(())
 }
 
-/// `eval "$(sagebox hook zsh)"`용 스크립트. 디렉터리에 들어갈 때 `hook check`를 부르고,
+/// `eval "$(sagebox zsh)"`용 스크립트. 디렉터리에 들어갈 때 `hook check`를 부르고,
 /// 거절한 디렉터리는 그 셸에서 다시 묻지 않는다.
 pub fn hook_script(shell: &str) -> Result<String> {
     let exe = shell_quote(&std::env::current_exe()?.display().to_string());
