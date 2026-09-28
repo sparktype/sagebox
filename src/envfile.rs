@@ -217,9 +217,13 @@ pub fn hook_script(shell: &str) -> Result<String> {
 }}
 "#
     );
-    // zsh는 direnv보다 먼저 돌도록 chpwd 맨 앞에 넣는다. bash는 direnv hook 줄 뒤에 두면 앞에 붙는다.
+    // zsh는 direnv보다 먼저 돌도록 chpwd 맨 앞에 넣는다. 시작 디렉터리 검사는 셸 초기화 중이 아니라
+    // 첫 프롬프트 직전에 한 번 한다(p10k instant prompt는 초기화 중 입출력을 허용하지 않는다).
+    // bash는 direnv hook 줄 뒤에 두면 앞에 붙는다.
     let install = match shell {
-        "zsh" => "chpwd_functions=(_sagebox_hook ${chpwd_functions[@]})\n_sagebox_hook\n",
+        "zsh" => {
+            "chpwd_functions=(_sagebox_hook ${chpwd_functions[@]})\n_sagebox_first() { precmd_functions=(${precmd_functions:#_sagebox_first}); _sagebox_hook; }\nprecmd_functions+=(_sagebox_first)\n"
+        }
         "bash" => {
             "_sagebox_prompt() { [[ \"$PWD\" == \"${_sagebox_last-}\" ]] || { _sagebox_last=$PWD; _sagebox_hook; }; }\nPROMPT_COMMAND=\"_sagebox_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"\n"
         }
