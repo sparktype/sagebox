@@ -200,6 +200,15 @@ move them into the vault and remove them from .envrc? [y/N]
 
 `y` cleans it up exactly like `import-env --apply`. `N` leaves the file alone, and that shell won't ask about that folder again.
 
+### Tab completion
+
+Homebrew installs completions for zsh and bash automatically, so `sagebox <Tab>` lists commands, their options, and namespace names after `--ns`. Secret and profile names are not completed, because reading them would need the passphrase. With a Cargo install, generate the script yourself:
+
+```sh
+sagebox completion zsh > "${fpath[1]}/_sagebox"     # zsh (any directory on $fpath), then restart the shell
+sagebox completion bash > ~/.local/share/bash-completion/completions/sagebox   # bash
+```
+
 ### Namespaces (one vault per project)
 
 | How | Example |

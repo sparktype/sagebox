@@ -3,6 +3,7 @@ mod admin;
 mod audit;
 #[cfg(unix)]
 mod client;
+mod completion;
 #[cfg(unix)]
 mod daemon;
 #[cfg(unix)]
@@ -39,6 +40,7 @@ const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
   sagebox import <mcp.json> [--keep VAR]... [--apply]
   sagebox import-env <.envrc|.env> [--keep VAR]... [--apply]
   sagebox zsh | bash            (.zshrc: eval \"$(sagebox zsh)\"; asks to clean .envrc on cd)
+  sagebox completion zsh | bash (tab completion script)
   sagebox env [--print]            (for .envrc: eval \"$(sagebox env)\")
   sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
@@ -114,6 +116,10 @@ fn run(args: &[&str]) -> Result<()> {
             envfile::import(&root, Path::new(file), &keep, apply)
         }
         ["hook", "check"] => envfile::hook_check(&root),
+        ["completion", shell] => {
+            print!("{}", completion::script(shell)?);
+            Ok(())
+        }
         [shell @ ("zsh" | "bash")] => {
             print!("{}", envfile::hook_script(shell)?);
             Ok(())

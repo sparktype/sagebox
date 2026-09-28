@@ -200,6 +200,15 @@ move them into the vault and remove them from .envrc? [y/N]
 
 `y`를 누르면 `import-env --apply`와 같이 정리합니다. `N`을 누르면 그 셸에서는 다시 묻지 않습니다.
 
+### Tab 자동완성
+
+Homebrew로 설치하면 zsh·bash 자동완성이 함께 설치됩니다. `sagebox <Tab>`을 누르면 명령과 옵션, `--ns` 뒤에서는 네임스페이스 이름이 나옵니다. 비밀·프로필 이름은 금고를 열어야 알 수 있어서 자동완성하지 않습니다. Cargo로 설치했다면 스크립트를 직접 만듭니다.
+
+```sh
+sagebox completion zsh > "${fpath[1]}/_sagebox"     # zsh ($fpath 안의 아무 디렉터리), 셸 재시작
+sagebox completion bash > ~/.local/share/bash-completion/completions/sagebox   # bash
+```
+
 ### 네임스페이스 (프로젝트별 금고)
 
 | 방법 | 예 |

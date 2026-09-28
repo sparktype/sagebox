@@ -77,6 +77,7 @@
 - [x] `sagebox mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
 - [x] `sagebox run -- <명령>`: MCP 서버(Attach 임대)가 있을 때만 shell_env 주입 → verify: `run_needs_live_mcp_server`
 - [x] `sagebox zsh|bash`: cd 때 .envrc 평문 비밀을 묻고 정리 → verify: `hook_check_asks_before_cleaning_envrc`, 실제 zsh·bash에서 거절 후 재방문 시 다시 묻지 않음 확인
+- [x] `sagebox completion zsh|bash`: 명령·옵션·`--ns` 이름 자동완성, formula가 설치 → verify: `completion_scripts`, zsh·bash에서 가짜 compadd로 경우별 후보 확인
 - [ ] `sagebox copy <비밀>` (클립보드, 30초 후 지움)
 
 ## 4단계 — 하드웨어 슬롯 (순차)

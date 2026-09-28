@@ -866,3 +866,15 @@ fn hook_check_asks_before_cleaning_envrc() {
     );
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn completion_scripts() {
+    let home = std::env::temp_dir().join(format!("sbx-comp-{}", std::process::id()));
+    let out = |shell: &str| {
+        String::from_utf8_lossy(&sbx(&home, "", &["completion", shell]).stdout).into_owned()
+    };
+    assert!(out("zsh").starts_with("#compdef sagebox\n"));
+    assert!(out("bash").contains("complete -F _sagebox sagebox"));
+    assert!(stderr(&sbx(&home, "", &["completion", "fish"])).contains("unsupported shell"));
+    let _ = std::fs::remove_dir_all(&home);
+}
