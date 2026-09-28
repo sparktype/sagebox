@@ -69,6 +69,8 @@ sagebox          # prints usage if the install worked
 
 Homebrew builds sagebox from source, so the first install also pulls in Rust as a build dependency. Upgrade later with `brew upgrade sagebox`.
 
+> If you manage Rust with rustup, Homebrew's `rust` build dependency lands ahead of `~/.cargo/bin` on your `PATH` and shadows your toolchain. Once the install or upgrade finishes, remove it with `brew uninstall rust llvm@22`; sagebox itself keeps working.
+
 ### From source with Cargo
 
 You need [Rust](https://rustup.rs) 1.85 or newer (check with `rustc --version`).

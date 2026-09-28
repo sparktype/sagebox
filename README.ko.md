@@ -69,6 +69,8 @@ sagebox          # 사용법이 출력되면 성공입니다
 
 Homebrew는 소스에서 빌드하므로, 처음 설치할 때 빌드용 Rust도 함께 설치됩니다. 나중에 업데이트할 때는 `brew upgrade sagebox`를 실행합니다.
 
+> rustup으로 Rust를 관리한다면, Homebrew가 빌드용으로 설치한 `rust`가 PATH에서 `~/.cargo/bin`보다 앞에 잡혀 기존 툴체인을 가립니다. 설치나 업그레이드가 끝나면 `brew uninstall rust llvm@22`로 지우세요. sagebox는 그대로 동작합니다.
+
 ### Cargo로 소스에서 설치
 
 [Rust](https://rustup.rs) 1.85 이상이 필요합니다(`rustc --version`으로 확인).
