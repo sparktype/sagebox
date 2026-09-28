@@ -58,7 +58,8 @@
 - [x] 잠자기 감지(벽시계 − 단조 시계 차이 > 30초)와 화면 잠금 감지(macOS `CGSSessionScreenIsLocked`) 시 데몬 종료 → verify: 잠자기 판정 단위 테스트, 세션 조회 실기(잠금 해제 상태에서 키 없음 확인)
   - [ ] 실제로 화면을 잠갔을 때 데몬이 종료되는지 사용자 확인 (`SAGEVAULT_DEBUG=1`로 debug.log의 `end … screen locked`)
 - [x] 개발·디버깅 환경변수 `SAGEVAULT_DEBUG`, `SAGEVAULT_NO_AUTOLOCK`
-- [ ] Touch ID 잠금 해제: 먼저 스파이크(서명 없는 CLI에서 LocalAuthentication + 로그인 키체인), 그다음 키체인 슬롯
+- [x] Touch ID 스파이크: Secure Enclave 키(C Security API, `toid` 블롭 파일, `userPresence`)가 서명 없는 CLI·에이전트 맥락에서 동작. 키체인 방식은 기각(생체 항목 -34018, 빌드마다 ACL 문제)
+- [ ] `secure_enclave` 슬롯 구현: ECDH로 KEK 유도, `sgv slot add secure-enclave`, unlock·GUI 잠금 해제에서 우선 사용 후 패스프레이즈로 대체
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
 - [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움), `sgv mcp add` (Claude Code 등록 도우미)
 

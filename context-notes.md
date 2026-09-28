@@ -46,3 +46,9 @@
 - 분류가 애매한 변수는 비밀로 취급한다. 틀리면 설정에서 볼트로 옮겨질 뿐이지만, 반대로 틀리면 평문이 남기 때문이다(Jev를 붙일 때와 같은 비대칭).
 - 설정 파일은 serde_json Value로 다시 쓰므로 키 순서가 정렬된다. preserve_order 기능은 의존성이 늘고 감사 MAC 직렬화에도 영향을 주므로 쓰지 않았다.
 - Jev 연동은 2026-09-28 검토와 실험까지만 하고 보류했다(사용자 결정). 합성 예시 실험에서 trust 시점 저장소 검사와 import 변수 이름 분류(정규식이 틀린 5/15를 교정)가 유효했다. 원칙은 네 가지다. 더 엄격하게만 쓴다, 비밀 값은 보내지 않는다, 핫패스에 넣지 않는다, 실패하면 건너뛴다.
+- 2026-09-28 Touch ID 스파이크 결과(macOS 27.2, Apple Silicon, ad-hoc 서명 CLI, 에이전트가 띄운 비대화형 프로세스 포함).
+  - 덮개를 닫은 상태에서는 Touch ID와 Watch 정책이 사용 불가(LAError -4)다. `deviceOwnerAuthentication`(로그인 암호 대체)만 가능하다. 그래서 Touch ID 전용이 아니라 `userPresence`(Touch ID → Watch → 로그인 암호)로 묶어야 한다.
+  - 생체 인증에 묶인 데이터 보호 키체인 항목은 -34018(entitlement 없음)로 불가능하다.
+  - 파일 기반 로그인 키체인은 쓰기·읽기가 되지만, 빌드가 바뀌면 코드 해시가 달라져 기존 항목을 지우지 못했다(ACL). 업데이트마다 문제가 생긴다.
+  - **Secure Enclave 키는 C Security API만으로 된다.** `SecKeyCreateRandomKey`(tkid=SecureEnclave, 비영구, `privateKeyUsage|userPresence`)로 만들고, `SecKeyCopyAttributes`의 `toid`(427바이트 암호화 블롭)를 파일에 저장한다. `SecKeyCreateWithData(블롭, {EC, private, tkid=SE})`로 복원하고 `SecKeyCopyKeyExchangeResult`(ECDH)를 쓸 때마다 시스템 대화상자가 떴다. 에이전트가 띄운 프로세스에서도 됐다. 따라서 Rust FFI로 구현 가능하고 Swift는 필요 없다.
+  - 위험: `toid`는 문서화되지 않은 속성 이름이다. CryptoKit의 `dataRepresentation`이 같은 크기의 같은 블롭을 쓰므로(2019년 이후 유지) 당장 바뀔 가능성은 낮지만, 복원이 실패하면 패스프레이즈 슬롯으로 되돌아가야 한다.
