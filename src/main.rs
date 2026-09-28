@@ -43,8 +43,7 @@ const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
   sagebox completion zsh | bash (tab completion script)
   sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
-  sagebox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
-  sagebox profile rm <name>
+  sagebox profile rm <name>      (then `mcp add` it again)
   sagebox unlock [--passphrase] | lock | status
   sagebox touchid enable | disable | status   (macOS)
   sagebox exec <profile>
@@ -140,14 +139,10 @@ fn run(args: &[&str]) -> Result<()> {
             import::run(&vault, Path::new(file), &keep, apply, &ns_args)
         }
         ["audit", "verify"] => admin::audit_verify(&vault, &dir.join("audit.log")),
-        ["profile", "add", name, rest @ ..] => {
-            let (env, command) = parse_profile_args(rest)?;
-            admin::profile_add(&vault, name, env, command)
-        }
         #[cfg(unix)]
         ["mcp", "serve"] => mcp_server::serve(&ns),
         ["mcp", "add", server, rest @ ..] => {
-            // --scope만 떼어 내고 나머지는 profile add와 같은 형식으로 읽는다.
+            // --scope만 떼어 내고 나머지(--env ... -- 명령)를 읽는다.
             let dash = rest.iter().position(|a| *a == "--").unwrap_or(rest.len());
             let mut opts = rest[..dash].to_vec();
             let mut scope = "user";

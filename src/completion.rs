@@ -17,7 +17,7 @@ _sagebox() {
     'import:move plaintext secrets out of an MCP config'
     'import-env:move plaintext secrets out of .envrc or .env'
     'mcp:add an MCP server or run the sagebox MCP server'
-    'profile:add or remove a profile'
+    'profile:remove a profile'
     'unlock:unlock the session'
     'lock:lock the session'
     'status:show whether the session is unlocked'
@@ -43,7 +43,7 @@ _sagebox() {
   fi
   # `--` 뒤는 실행할 명령이라 일반 자동완성에 맡긴다.
   local i=${words[(i)--]}
-  if (( i < CURRENT )) && [[ $words[2] == (run|mcp|profile) ]]; then
+  if (( i < CURRENT )) && [[ $words[2] == (run|mcp) ]]; then
     shift $i words
     (( CURRENT -= i ))
     _normal
@@ -56,10 +56,7 @@ _sagebox() {
     audit) compadd verify ;;
     unlock) compadd -- --passphrase ;;
     touchid) compadd enable disable status ;;
-    profile)
-      if (( CURRENT == 3 )); then compadd add rm
-      elif [[ $words[3] == add ]] && (( CURRENT > 4 )); then compadd -- --env --
-      fi ;;
+    profile) (( CURRENT == 3 )) && compadd rm ;;
     mcp)
       if (( CURRENT == 3 )); then compadd add serve
       elif [[ $words[CURRENT-1] == --scope ]]; then compadd local user project
@@ -104,10 +101,7 @@ const BASH: &str = r#"_sagebox() {
     audit) w=verify ;;
     unlock) w=--passphrase ;;
     touchid) w="enable disable status" ;;
-    profile)
-      if (( pos == 1 )); then w="add rm"
-      elif [[ ${COMP_WORDS[i+1]} == add ]] && (( pos > 2 )); then w="--env --"
-      fi ;;
+    profile) (( pos == 1 )) && w=rm ;;
     mcp)
       if (( pos == 1 )); then w="add serve"
       elif [[ ${COMP_WORDS[COMP_CWORD-1]} == --scope ]]; then w="local user project"

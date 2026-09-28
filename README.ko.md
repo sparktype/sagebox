@@ -152,7 +152,7 @@ sagebox mcp add github --env GITHUB_TOKEN=gh -- npx -y @modelcontextprotocol/ser
 |------|---------|
 | `sagebox mcp add <서버> --env VAR=비밀 -- <명령>` | 프로필을 만들고 Claude Code에 등록합니다 |
 | `sagebox import <mcp.json> [--apply]` | 기존 MCP 설정의 평문 비밀을 금고로 옮깁니다. `--apply` 없이 실행하면 미리보기만 합니다 |
-| `sagebox profile add/rm` | 프로필을 직접 만들고 지웁니다 |
+| `sagebox profile rm <이름>` | 프로필을 지웁니다(바꾸려면 지운 뒤 `mcp add`로 다시 만듭니다) |
 | `sagebox exec <프로필>` | 프로필대로 비밀을 넣어 실행합니다 (MCP 설정이 부르는 명령) |
 | `sagebox mcp serve` | sagebox 자체 MCP 서버를 켭니다 (아래 참고) |
 
@@ -247,7 +247,7 @@ sagebox completion bash > ~/.local/share/bash-completion/completions/sagebox   #
 핵심 개념 네 가지입니다.
 
 1. **봉투 암호화.** 금고 본문은 무작위 키(DEK)로 암호화되고, DEK는 패스프레이즈나 Touch ID로 여는 "슬롯"에 들어 있습니다. 슬롯을 추가해도 본문을 다시 암호화할 필요가 없습니다.
-2. **관리는 데몬을 거치지 않습니다.** `set`, `rm`, `profile add` 같은 명령은 매번 패스프레이즈로 금고 파일을 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트가 규칙을 바꿀 수 없습니다.
+2. **관리는 데몬을 거치지 않습니다.** `set`, `rm`, `mcp add` 같은 명령은 매번 패스프레이즈로 금고 파일을 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트가 규칙을 바꿀 수 없습니다.
 3. **데몬은 필요할 때만 삽니다.** 첫 `exec`나 `unlock`이 데몬을 자동으로 띄웁니다. 데몬은 메모리에 DEK만 들고 있다가, 마지막 MCP 서버가 끝나고 30초가 지나거나 8시간이 되면, 또는 잠자기나 화면 잠금 때 DEK를 지우고 종료합니다.
 4. **임대(lease).** `exec`는 데몬과 연결한 소켓을 MCP 서버 프로세스에 물려준 채 `execve`합니다. 데몬은 그 소켓이 닫히는 것을 보고 서버가 끝났다는 것을 압니다.
 

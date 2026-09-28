@@ -152,7 +152,7 @@ From now on, when Claude Code starts the github MCP server, sagebox injects the 
 |---------|--------------|
 | `sagebox mcp add <server> --env VAR=secret -- <command>` | Creates a profile and registers it with Claude Code |
 | `sagebox import <mcp.json> [--apply]` | Moves plaintext secrets out of an existing MCP config into the vault. Without `--apply` it only previews |
-| `sagebox profile add/rm` | Creates or deletes a profile by hand |
+| `sagebox profile rm <name>` | Deletes a profile (to change one, delete it and `mcp add` it again) |
 | `sagebox exec <profile>` | Runs a profile with its secrets injected (this is what the MCP config calls) |
 | `sagebox mcp serve` | Starts sagebox's own MCP server (see below) |
 
@@ -247,7 +247,7 @@ Earlier rows take precedence. `sagebox ns` shows which namespace is selected. A 
 Four key ideas:
 
 1. **Envelope encryption.** The vault body is encrypted with a random key (the DEK), and the DEK is stored in "slots" opened by a passphrase or Touch ID. Adding a slot never requires re-encrypting the body.
-2. **Admin commands bypass the daemon.** Commands like `set`, `rm` and `profile add` open the vault file directly with the passphrase every time. So even while a session is unlocked, an agent cannot change the rules.
+2. **Admin commands bypass the daemon.** Commands like `set`, `rm` and `mcp add` open the vault file directly with the passphrase every time. So even while a session is unlocked, an agent cannot change the rules.
 3. **The daemon lives only when needed.** The first `exec` or `unlock` starts it automatically. It keeps only the DEK in memory, and wipes it and exits 30 seconds after the last MCP server ends, after 8 hours, or when the system sleeps or the screen locks.
 4. **Leases.** `exec` hands its daemon socket down to the MCP server process across `execve`. When that socket closes, the daemon knows the server has ended.
 

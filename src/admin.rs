@@ -1,12 +1,11 @@
 // 데몬을 거치지 않고 패스프레이즈로 볼트 파일을 직접 편집하는 관리 명령
-use std::collections::BTreeMap;
 use std::io::{BufRead, IsTerminal};
 use std::path::Path;
 
 use zeroize::Zeroizing;
 
 use crate::audit;
-use crate::vault::{self, Dek, Header, Profile, Result, Vault};
+use crate::vault::{self, Dek, Header, Result, Vault};
 
 /// 볼트 파일은 같은 UID면 복사해 오프라인 대입 공격을 할 수 있으므로 길이 하한을 둔다.
 const MIN_PASSPHRASE: usize = 8;
@@ -160,29 +159,6 @@ pub fn list(path: &Path) -> Result<()> {
         println!("  {name}: [{}] {}", env.join(" "), p.command.join(" "));
     }
     Ok(())
-}
-
-pub fn profile_add(
-    path: &Path,
-    name: &str,
-    env: BTreeMap<String, String>,
-    command: Vec<String>,
-) -> Result<()> {
-    // PATH 조작으로 다른 실행 파일이 끼어들지 않도록 절대경로만 받는다.
-    match command.first() {
-        Some(bin) if Path::new(bin).is_absolute() => {}
-        _ => return Err("command must start with an absolute path".into()),
-    }
-    for var in env.keys() {
-        check_env_name(var)?;
-    }
-    edit(path, |v| {
-        if let Some(missing) = env.values().find(|s| !v.secrets.contains_key(*s)) {
-            return Err(format!("no secret named {missing}").into());
-        }
-        v.profiles.insert(name.into(), Profile { command, env });
-        Ok(())
-    })
 }
 
 pub fn profile_rm(path: &Path, name: &str) -> Result<()> {

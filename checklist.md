@@ -8,7 +8,7 @@
 
 ## 2단계 — 관리 CLI
 - [x] `init`, `set <name>`(tty 무에코 입력), `rm <name>`, `list`
-- [x] `profile add <name> --env ENV=secret ... -- <argv>`, `profile rm`
+- [x] `profile rm` (`profile add`는 2026-09-28 삭제, `mcp add`로 대체)
 - [x] verify: 임시 HOME에서 수동 실행 + `tests/cli.rs`
 
 ## 3단계 — 데몬과 exec

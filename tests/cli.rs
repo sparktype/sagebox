@@ -12,6 +12,7 @@ fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_sagebox"))
         .args(args)
         .current_dir(cwd)
+        .env("PATH", no_claude_path())
         .env("SAGEBOX_HOME", home)
         .env("SAGEBOX_NO_GUI", "1")
         .env("SAGEBOX_NO_AUTOLOCK", "1")
@@ -25,6 +26,24 @@ fn sbx_in(cwd: &Path, home: &Path, stdin: &str, args: &[&str]) -> Output {
         assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
     }
     child.wait_with_output().unwrap()
+}
+
+/// `mcp add`가 실제 `claude mcp add`로 사용자 설정을 바꾸지 않도록, 항상 실패하는 가짜 claude를 PATH 맨 앞에 둔다.
+fn no_claude_path() -> String {
+    static DIR: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    let dir = DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("sbx-noclaude-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("claude");
+        std::fs::write(&fake, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        dir
+    });
+    format!("{}:{}", dir.display(), std::env::var("PATH").unwrap())
 }
 
 fn stderr(o: &Output) -> String {
@@ -78,22 +97,14 @@ fn admin_flow() {
     let o = sbx(
         &home,
         "",
-        &["profile", "add", "p", "--env", "PATH=gh", "--", abs],
+        &["mcp", "add", "p", "--env", "PATH=gh", "--", abs],
     );
     assert!(stderr(&o).contains("reserved variable PATH"));
-    let o = sbx(&home, "password\n", &["profile", "add", "p", "--", "env"]);
-    assert!(stderr(&o).contains("absolute path"));
-    let o = sbx(
-        &home,
-        "password\n",
-        &["profile", "add", "p", "--env", "X=nope", "--", abs],
-    );
-    assert!(stderr(&o).contains("no secret named nope"));
     let o = sbx(
         &home,
         "password\n",
         &[
-            "profile",
+            "mcp",
             "add",
             "github",
             "--env",
@@ -162,7 +173,7 @@ fn daemon_session_and_exec() {
         ("github", &["/usr/bin/env"][..]),
         ("sleeper", &["/bin/sleep", "30"]),
     ] {
-        let mut args = vec!["profile", "add", name, "--env", "GITHUB_TOKEN=gh", "--"];
+        let mut args = vec!["mcp", "add", name, "--env", "GITHUB_TOKEN=gh", "--"];
         args.extend(cmd);
         ok(sbx(&home, "password\n", &args));
     }
@@ -294,7 +305,7 @@ fn namespaces_are_isolated() {
             "personal1\n"
         };
         let args = [
-            "profile",
+            "mcp",
             "add",
             "github",
             "--env",
@@ -698,7 +709,7 @@ fn mcp_serve_lists_names_only() {
     ok(sbx(&home, "password\npassword\n", &["init"]));
     ok(sbx(&home, "password\nghp_secret\n", &["set", "gh"]));
     let args = [
-        "profile",
+        "mcp",
         "add",
         "github",
         "--env",
