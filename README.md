@@ -51,34 +51,33 @@ sagebox run -- npm run dev
 
 ```json
 // The MCP config only says "run it through sagebox"
-"github": { "command": "/Users/me/.cargo/bin/sagebox", "args": ["exec", "github"] }
+"github": { "command": "/opt/homebrew/bin/sagebox", "args": ["exec", "github"] }
 ```
 
 ---
 
 ## Install
 
-### Requirements
+sagebox runs on macOS and Linux (Windows currently only compiles).
 
-- macOS or Linux (Windows currently only compiles)
-- [Rust](https://rustup.rs) 1.85 or newer (check with `rustc --version`)
-
-### Installing
+### Homebrew (recommended)
 
 ```sh
-cargo install --git https://github.com/sparktype/sagebox
+brew install sparktype/tap/sagebox
 sagebox          # prints usage if the install worked
 ```
 
-Or build from a clone:
+Homebrew builds sagebox from source, so the first install also pulls in Rust as a build dependency. Upgrade later with `brew upgrade sagebox`.
+
+### From source with Cargo
+
+You need [Rust](https://rustup.rs) 1.85 or newer (check with `rustc --version`).
 
 ```sh
-git clone https://github.com/sparktype/sagebox
-cd sagebox
-cargo install --path .
+cargo install --git https://github.com/sparktype/sagebox
 ```
 
-The binary goes to `~/.cargo/bin/sagebox`, which must be on your `PATH`.
+The binary goes to `~/.cargo/bin/sagebox`, which must be on your `PATH`. If you later switch to Homebrew, run `cargo uninstall sagebox` first so the old copy does not shadow the new one.
 
 ---
 
@@ -180,7 +179,7 @@ sagebox run -- npm run dev
 > **Note:** `sagebox run` only works **while the sagebox MCP server is running**, that is, while Claude Code is open in this project. Register it once:
 >
 > ```sh
-> claude mcp add -s user sagebox -- ~/.cargo/bin/sagebox mcp serve
+> claude mcp add -s user sagebox -- "$(command -v sagebox)" mcp serve
 > ```
 
 ### Shell hook: check on every `cd`

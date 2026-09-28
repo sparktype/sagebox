@@ -51,34 +51,33 @@ sagebox run -- npm run dev
 
 ```json
 // MCP 설정에는 "sagebox로 실행하라"는 내용만 남습니다
-"github": { "command": "/Users/me/.cargo/bin/sagebox", "args": ["exec", "github"] }
+"github": { "command": "/opt/homebrew/bin/sagebox", "args": ["exec", "github"] }
 ```
 
 ---
 
 ## 설치
 
-### 준비물
+sagebox는 macOS와 Linux에서 동작합니다(Windows는 아직 컴파일만 됩니다).
 
-- macOS 또는 Linux (Windows는 아직 컴파일만 됩니다)
-- [Rust](https://rustup.rs) 1.85 이상 (`rustc --version`으로 확인)
-
-### 설치하기
+### Homebrew (권장)
 
 ```sh
-cargo install --git https://github.com/sparktype/sagebox
+brew install sparktype/tap/sagebox
 sagebox          # 사용법이 출력되면 성공입니다
 ```
 
-소스를 받아서 설치해도 됩니다.
+Homebrew는 소스에서 빌드하므로, 처음 설치할 때 빌드용 Rust도 함께 설치됩니다. 나중에 업데이트할 때는 `brew upgrade sagebox`를 실행합니다.
+
+### Cargo로 소스에서 설치
+
+[Rust](https://rustup.rs) 1.85 이상이 필요합니다(`rustc --version`으로 확인).
 
 ```sh
-git clone https://github.com/sparktype/sagebox
-cd sagebox
-cargo install --path .
+cargo install --git https://github.com/sparktype/sagebox
 ```
 
-실행 파일은 `~/.cargo/bin/sagebox`에 설치됩니다. 이 경로가 `PATH`에 있어야 합니다.
+실행 파일은 `~/.cargo/bin/sagebox`에 설치되며, 이 경로가 `PATH`에 있어야 합니다. 나중에 Homebrew로 바꾼다면 먼저 `cargo uninstall sagebox`로 예전 것을 지워야 새 것이 가려지지 않습니다.
 
 ---
 
@@ -180,7 +179,7 @@ sagebox run -- npm run dev
 > **주의:** `sagebox run`은 **sagebox MCP 서버가 떠 있을 때만**(= 이 프로젝트에서 Claude Code를 켜 둔 동안) 동작합니다. 먼저 한 번 등록해 두세요.
 >
 > ```sh
-> claude mcp add -s user sagebox -- ~/.cargo/bin/sagebox mcp serve
+> claude mcp add -s user sagebox -- "$(command -v sagebox)" mcp serve
 > ```
 
 ### 셸 훅: cd할 때 자동 검사
