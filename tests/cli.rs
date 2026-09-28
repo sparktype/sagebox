@@ -775,12 +775,17 @@ fn run_needs_live_mcp_server() {
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
-    let sock = home.join("ns/runproj/sock");
-    assert!(wait_until(|| sock.exists()), "mcp serve did not attach");
-
+    // 소켓이 생긴 뒤에도 Attach가 처리되기까지 틈이 있어, 게이트가 열릴 때까지 기다린다.
     // 잠겨 있으면 GUI로 묻는데 테스트에서는 꺼 두었으니 실패한다.
-    let o = run();
-    assert!(!o.status.success() && !stderr(&o).contains("no sagebox MCP server"));
+    let mut o = run();
+    assert!(
+        wait_until(|| {
+            o = run();
+            !stderr(&o).contains("no sagebox MCP server")
+        }),
+        "mcp serve did not attach"
+    );
+    assert!(!o.status.success(), "{}", stderr(&o));
 
     let o = sbx_in(&project, &home, "projpass1\n", &["unlock", "--passphrase"]);
     assert!(o.status.success(), "{}", stderr(&o));
