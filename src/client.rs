@@ -172,7 +172,7 @@ fn exec_request(ns: &Ns, profile: &str) -> Result<(UnixStream, Response)> {
 
 /// 잠겨 있으면 GUI로 패스프레이즈를 묻는다(최대 3번). 저장소의 .sagebox가 다른 네임스페이스를
 /// 요청할 수 있으므로, 사용자가 판단하도록 네임스페이스·프로젝트 경로·요청한 부모 프로세스를 보여 준다.
-fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
+fn gui_unlock(ns: &Ns, purpose: &str) -> Result<()> {
     let parent = Command::new("ps")
         .args([
             "-o",
@@ -187,7 +187,7 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         .map(|d| d.display().to_string())
         .unwrap_or_default();
     let what = format!(
-        "namespace \"{}\" to run profile \"{profile}\"\nproject: {project}\nrequested by: {parent}",
+        "namespace \"{}\" to {purpose}\nproject: {project}\nrequested by: {parent}",
         ns.name
     );
     if try_touchid(ns, &format!("unlock sagebox {what}")) {
@@ -218,7 +218,7 @@ pub fn exec(ns: &Ns, profile: &str) -> Result<()> {
             "namespace {} is locked; asking via GUI",
             ns.name
         ));
-        gui_unlock(ns, profile)?;
+        gui_unlock(ns, &format!("run profile \"{profile}\""))?;
         (s, resp) = exec_request(ns, profile)?;
     }
     let Response::Exec { command, env } = resp else {
@@ -234,4 +234,43 @@ pub fn exec(ns: &Ns, profile: &str) -> Result<()> {
         .envs(env.iter().map(|(k, v)| (k, v.as_str())))
         .exec();
     Err(format!("exec {}: {err}", command[0]).into())
+}
+
+/// `sgb mcp serve`용 임대. 데몬이 없으면 띄운다. 반환한 소켓을 닫으면 임대가 끝난다.
+pub(crate) fn attach(ns: &Ns) -> Result<UnixStream> {
+    let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
+    request(&mut s, &Request::Attach)?;
+    Ok(s)
+}
+
+fn run_request(ns: &Ns) -> Result<Response> {
+    let no_mcp = || {
+        format!(
+            "no sagebox MCP server is running for namespace {}; start Claude Code (with the sagebox MCP server) in this project first",
+            ns.name
+        )
+    };
+    // MCP 서버가 있으면 데몬도 떠 있다. 없으면 데몬을 띄우지 않고 바로 거부한다.
+    let mut s = connect(ns, false)?.ok_or_else(no_mcp)?;
+    let project = ns.project.as_ref().map(|p| p.display().to_string());
+    request(&mut s, &Request::Run { project })
+}
+
+/// 네임스페이스의 shell_env를 넣고 command로 바뀐다. 성공하면 반환하지 않는다.
+/// sagebox MCP 서버가 떠 있을 때만 되고, 잠겨 있으면 Touch ID(또는 GUI 패스프레이즈)로 푼다.
+pub fn run(ns: &Ns, command: &[&str]) -> Result<()> {
+    let (bin, args) = command.split_first().ok_or("missing command after --")?;
+    let mut resp = run_request(ns)?;
+    if matches!(resp, Response::Locked) {
+        gui_unlock(ns, &format!("run `{}`", command.join(" ")))?;
+        resp = run_request(ns)?;
+    }
+    let Response::Exec { env, .. } = resp else {
+        return Err(format!("locked: run `{}`", unlock_hint(ns)).into());
+    };
+    let err = Command::new(bin)
+        .args(args)
+        .envs(env.iter().map(|(k, v)| (k, v.as_str())))
+        .exec();
+    Err(format!("exec {bin}: {err}").into())
 }

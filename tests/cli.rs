@@ -748,12 +748,8 @@ fn mcp_serve_lists_names_only() {
             .to_string()
     };
 
-    // 데몬이 없으면 띄우지 않고 잠김을 알린다.
+    // 잠겨 있으면 목록 대신 unlock을 안내한다.
     assert!(call().contains("sgb unlock"));
-    assert!(
-        !home.join("sock").exists(),
-        "mcp serve must not spawn the daemon"
-    );
 
     ok(sbx(&home, "password\n", &["unlock", "--passphrase"]));
     let text = call();
@@ -765,4 +761,61 @@ fn mcp_serve_lists_names_only() {
         !text.contains("ghp_secret"),
         "values must never be returned"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_needs_live_mcp_server() {
+    let base = std::env::temp_dir().join(format!("sbx-run-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (home, project) = (base.join("h"), base.join("runproj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let _cleanup = LockOnDrop(home.clone(), "runproj");
+    let envrc = project.join(".envrc");
+    std::fs::write(&envrc, "export OPENAI_API_KEY=sk-FAKEvalue123\n").unwrap();
+    let o = sbx(
+        &home,
+        "projpass1\nprojpass1\n",
+        &["import-env", envrc.to_str().unwrap(), "--apply"],
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
+    let run = || sbx_in(&project, &home, "", &["run", "--", "/usr/bin/env"]);
+
+    // MCP 서버가 없으면 잠금 해제를 묻지도 않고 거부한다.
+    assert!(stderr(&run()).contains("no sagebox MCP server"));
+
+    let mut serve = Command::new(env!("CARGO_BIN_EXE_sgb"))
+        .args(["mcp", "serve"])
+        .current_dir(&project)
+        .env("SAGEBOX_HOME", &home)
+        .env("SAGEBOX_NO_GUI", "1")
+        .env("SAGEBOX_NO_AUTOLOCK", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .spawn()
+        .unwrap();
+    let sock = home.join("ns/runproj/sock");
+    assert!(wait_until(|| sock.exists()), "mcp serve did not attach");
+
+    // 잠겨 있으면 GUI로 묻는데 테스트에서는 꺼 두었으니 실패한다.
+    let o = run();
+    assert!(!o.status.success() && !stderr(&o).contains("no sagebox MCP server"));
+
+    let o = sbx_in(&project, &home, "projpass1\n", &["unlock", "--passphrase"]);
+    assert!(o.status.success(), "{}", stderr(&o));
+    let o = run();
+    assert!(
+        String::from_utf8_lossy(&o.stdout).contains("OPENAI_API_KEY=sk-FAKEvalue123"),
+        "{}",
+        stderr(&o)
+    );
+
+    // MCP 서버가 끝나면(stdin EOF) 임대가 풀려 다시 거부한다.
+    drop(serve.stdin.take());
+    serve.wait().unwrap();
+    assert!(wait_until(
+        || stderr(&run()).contains("no sagebox MCP server")
+    ));
+
+    std::fs::remove_dir_all(&base).unwrap();
 }

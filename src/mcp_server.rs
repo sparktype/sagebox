@@ -1,5 +1,5 @@
 // 에이전트가 비밀 이름·프로필·잠금 상태를 조회하는 stdio MCP 서버 `sgb mcp serve`. 비밀 값은 절대 돌려주지 않는다.
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 
 use serde_json::{Value, json};
 
@@ -11,8 +11,13 @@ use crate::vault::Result;
 /// 클라이언트가 버전을 보내지 않았을 때 쓰는 값.
 const PROTOCOL: &str = "2025-06-18";
 
-/// 줄 단위 JSON-RPC 2.0. 데몬은 띄우지 않고, 이미 풀린 세션에만 묻는다.
+/// 줄 단위 JSON-RPC 2.0. 살아 있는 동안 데몬에 임대를 잡아 `sgb run`을 허용한다.
+/// 조회 도구는 잠금을 풀지 않고, 이미 풀린 세션에만 묻는다.
 pub fn serve(ns: &Ns) -> Result<()> {
+    if ns.dir.join("vault").exists() {
+        let ns = ns.clone();
+        std::thread::spawn(move || hold_lease(&ns));
+    }
     let mut out = std::io::stdout().lock();
     for line in std::io::stdin().lock().lines() {
         let line = line?;
@@ -44,6 +49,21 @@ pub fn serve(ns: &Ns) -> Result<()> {
     Ok(())
 }
 
+/// 임대를 잡고 있다가 데몬이 끝나면(lock·화면 잠금·8시간) 다시 잡는다. 새 데몬은 잠긴 채로 뜬다.
+/// 이 프로세스가 끝나면 소켓이 닫혀 임대도 끝난다.
+fn hold_lease(ns: &Ns) {
+    loop {
+        match client::attach(ns) {
+            Ok(mut s) => {
+                let mut buf = [0u8; 64];
+                while matches!(s.read(&mut buf), Ok(n) if n > 0) {}
+            }
+            Err(e) => crate::debug::log(format_args!("mcp serve: attach failed: {e}")),
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+}
+
 fn handle(ns: &Ns, msg: &Value) -> std::result::Result<Value, (i32, String)> {
     let params = &msg["params"];
     match msg["method"].as_str().unwrap_or("") {
@@ -51,7 +71,7 @@ fn handle(ns: &Ns, msg: &Value) -> std::result::Result<Value, (i32, String)> {
             "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sagebox", "version": env!("CARGO_PKG_VERSION")},
-            "instructions": "sagebox keeps the user's API keys and passwords. These tools show secret names, profiles and lock status only; secret values are never returned. To give an MCP server a secret, ask the user to run `sgb mcp add <server> --env VAR=secret -- <command>`.",
+            "instructions": "sagebox keeps the user's API keys and passwords. These tools show secret names, profiles and lock status only; secret values are never returned. To give an MCP server a secret, ask the user to run `sgb mcp add <server> --env VAR=secret -- <command>`. To run or debug this project with its env (replacing .envrc), use `sgb run -- <command>` in the shell; it works only while this server is running.",
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": [

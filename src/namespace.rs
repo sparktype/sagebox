@@ -6,6 +6,7 @@ use crate::vault::Result;
 pub const DEFAULT: &str = "default";
 
 /// 결정된 네임스페이스. source는 어디서 정해졌는지(--ns, SAGEBOX_NS, .sagebox 경로, default).
+#[derive(Clone)]
 pub struct Ns {
     pub name: String,
     pub source: String,

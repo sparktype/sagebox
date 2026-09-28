@@ -45,7 +45,8 @@ const USAGE: &str = "usage: sgb [--ns <namespace>] <command>
   sgb profile rm <name>
   sgb unlock [--passphrase] | lock | status
   sgb touchid enable | disable | status   (macOS)
-  sgb exec <profile>";
+  sgb exec <profile>
+  sgb run -- <command> [args]...  (project env; only while the sagebox MCP server runs)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -171,10 +172,13 @@ fn run(args: &[&str]) -> Result<()> {
         ["status"] => client::status(&ns),
         #[cfg(unix)]
         ["exec", profile] => client::exec(&ns, profile),
+        #[cfg(unix)]
+        ["run", "--", command @ ..] => client::run(&ns, command),
         #[cfg(not(unix))]
-        ["daemon" | "unlock" | "lock" | "status"] | ["exec", _] | ["mcp", "serve"] => {
-            Err("not supported on this platform yet".into())
-        }
+        ["daemon" | "unlock" | "lock" | "status"]
+        | ["exec", _]
+        | ["mcp", "serve"]
+        | ["run", ..] => Err("not supported on this platform yet".into()),
         _ => Err(USAGE.into()),
     }
 }

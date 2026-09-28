@@ -47,6 +47,13 @@ pub enum Request {
         #[serde(default)]
         project: Option<String>,
     },
+    /// `sgb mcp serve`가 잡는 임대. 잠긴 동안에도 받는다. 이 임대가 있어야 Run이 된다.
+    Attach,
+    /// 네임스페이스의 shell_env를 돌려받아 `sgb run`이 명령에 넣는다.
+    Run {
+        #[serde(default)]
+        project: Option<String>,
+    },
     /// 비밀 이름·만료일·프로필 목록. 값은 담지 않는다(`sgb mcp serve`용).
     List {
         #[serde(default)]
@@ -107,8 +114,10 @@ struct Session {
 
 struct State {
     session: Option<Session>,
-    /// 살아 있는 exec 임대 수 (= sagebox로 띄운 MCP 서버 수)
+    /// 살아 있는 임대 수 (= sagebox로 띄운 MCP 서버 수 + sagebox MCP 서버 수)
     leases: usize,
+    /// 그중 `sgb mcp serve`가 잡은 임대 수. 0이면 Run을 거부한다.
+    agents: usize,
     /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
     idle_since: SystemTime,
     had_lease: bool,
@@ -186,6 +195,8 @@ enum Next {
     Close,
     /// 연결을 열어 둔 채 EOF(= MCP 서버 종료)를 기다린다.
     Lease(i32),
+    /// Lease와 같고, 끝나면 agents도 줄인다.
+    Attach(i32),
     /// lock: 응답 후 DEK를 지우고 종료한다.
     Exit,
 }
@@ -222,6 +233,7 @@ pub fn serve(dir: &Path) -> Result<()> {
         state: Mutex::new(State {
             session: None,
             leases: 0,
+            agents: 0,
             idle_since: SystemTime::now(),
             had_lease: false,
         }),
@@ -268,12 +280,15 @@ impl Daemon {
         match next {
             Next::Close => {}
             Next::Exit => self.shutdown("lock"),
-            Next::Lease(pid) => {
+            Next::Lease(pid) | Next::Attach(pid) => {
                 if sent.is_ok() {
                     let _ = s.set_read_timeout(None);
                     // EOF(0) 또는 오류 = 이 소켓을 가진 프로세스가 모두 사라졌다.
                     let mut buf = [0u8; 64];
                     while matches!(s.read(&mut buf), Ok(n) if n > 0) {}
+                }
+                if matches!(next, Next::Attach(_)) {
+                    self.state.lock().unwrap().agents -= 1;
                 }
                 self.release(pid);
             }
@@ -322,6 +337,31 @@ impl Daemon {
                 st.leases += 1;
                 st.had_lease = true;
                 Ok((resp, Next::Lease(pid)))
+            }
+            Request::Attach => {
+                self.audit(pid, "attach", None, "ok")?;
+                st.leases += 1;
+                st.agents += 1;
+                st.had_lease = true;
+                Ok((Response::Ok, Next::Attach(pid)))
+            }
+            Request::Run { project } => {
+                // 잠금 해제(Touch ID)를 묻기 전에 MCP 서버부터 확인한다.
+                if st.agents == 0 {
+                    self.audit(pid, "run", None, "denied: no mcp server")?;
+                    return Err("no sagebox MCP server is running for this namespace; start Claude Code (with the sagebox MCP server) in this project first".into());
+                }
+                let Some(sess) = &st.session else {
+                    return Ok((Response::Locked, Next::Close));
+                };
+                let result = self.run(&sess.dek, project.as_deref());
+                let outcome = match &result {
+                    Ok((_, names)) => format!("ok: {}", names.join(",")),
+                    Err(e) => format!("denied: {e}"),
+                };
+                // 기록을 남기지 못하면 비밀을 내보내지 않는다.
+                self.audit(pid, "run", None, &outcome)?;
+                Ok((result?.0, Next::Close))
             }
             Request::List { project } => {
                 let Some(sess) = &st.session else {
@@ -426,6 +466,32 @@ impl Daemon {
         Ok((resp, names))
     }
 
+    /// shell_env(VAR → 비밀)의 값. command는 비워 두고 호출한 쪽이 정한다.
+    fn run(&self, dek: &Dek, project: Option<&str>) -> Result<(Response, Vec<String>)> {
+        let (_, v) = vault::open(&std::fs::read(&self.vault)?, dek)?;
+        v.check_project(project)?;
+        if v.shell_env.is_empty() {
+            return Err(
+                "this namespace has no project env; add it with `sgb import-env <.envrc>`".into(),
+            );
+        }
+        v.check_expiry(v.shell_env.values(), vault::unix_now())?;
+        let mut env = BTreeMap::new();
+        for (var, name) in &v.shell_env {
+            let value = v
+                .secrets
+                .get(name)
+                .ok_or(format!("missing secret {name}"))?;
+            env.insert(var.clone(), value.clone());
+        }
+        let names = v.shell_env.values().cloned().collect();
+        let resp = Response::Exec {
+            command: vec![],
+            env,
+        };
+        Ok((resp, names))
+    }
+
     /// 비밀 값은 절대 넣지 않는다.
     fn audit(&self, pid: i32, op: &str, profile: Option<&str>, result: &str) -> Result<()> {
         crate::debug::log(format_args!(
@@ -491,6 +557,7 @@ mod tests {
                 unlocked_at: t0,
             }),
             leases,
+            agents: 0,
             idle_since: t0,
             had_lease,
         }
