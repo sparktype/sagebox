@@ -706,3 +706,63 @@ fn import_envrc_and_export() {
 
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn mcp_serve_lists_names_only() {
+    let home = std::env::temp_dir().join(format!("sbx-ms-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    let _cleanup = LockOnDrop(home.clone(), "default");
+    let ok = |o: Output| assert!(o.status.success(), "{}", stderr(&o));
+    ok(sbx(&home, "password\npassword\n", &["init"]));
+    ok(sbx(&home, "password\nghp_secret\n", &["set", "gh"]));
+    let args = [
+        "profile",
+        "add",
+        "github",
+        "--env",
+        "GITHUB_TOKEN=gh",
+        "--",
+        "/usr/bin/env",
+    ];
+    ok(sbx(&home, "password\n", &args));
+
+    let session = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list","arguments":{}}}
+"#;
+    let call = || {
+        let o = sbx(&home, session, &["mcp", "serve"]);
+        assert!(o.status.success(), "{}", stderr(&o));
+        let replies: Vec<serde_json::Value> = String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(replies.len(), 3, "notifications get no reply");
+        assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
+        assert_eq!(replies[1]["result"]["tools"][1]["name"], "list");
+        replies[2]["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    // 데몬이 없으면 띄우지 않고 잠김을 알린다.
+    assert!(call().contains("sgb unlock"));
+    assert!(
+        !home.join("sock").exists(),
+        "mcp serve must not spawn the daemon"
+    );
+
+    ok(sbx(&home, "password\n", &["unlock", "--passphrase"]));
+    let text = call();
+    assert!(
+        text.contains("\"gh\"") && text.contains("\"GITHUB_TOKEN\""),
+        "{text}"
+    );
+    assert!(
+        !text.contains("ghp_secret"),
+        "values must never be returned"
+    );
+}

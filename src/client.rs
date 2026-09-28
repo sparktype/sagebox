@@ -67,7 +67,7 @@ fn spawn_daemon(ns: &str) -> Result<()> {
 }
 
 /// 이 네임스페이스를 푸는 명령. default가 아니면 --ns를 붙인다.
-fn unlock_hint(ns: &Ns) -> String {
+pub(crate) fn unlock_hint(ns: &Ns) -> String {
     if ns.name == namespace::DEFAULT {
         "sgb unlock".into()
     } else {
@@ -81,6 +81,14 @@ fn request(s: &mut UnixStream, req: &Request) -> Result<Response> {
         Response::Error { message } => Err(message.into()),
         resp => Ok(resp),
     }
+}
+
+/// 데몬을 띄우지 않고 묻는다. 데몬이 없으면(= 잠김) None.
+pub(crate) fn query(ns: &Ns, req: &Request) -> Result<Option<Response>> {
+    let Some(mut s) = connect(ns, false)? else {
+        return Ok(None);
+    };
+    request(&mut s, req).map(Some)
 }
 
 fn unlock_with(ns: &Ns, passphrase: zeroize::Zeroizing<String>) -> Result<()> {

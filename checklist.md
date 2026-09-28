@@ -73,6 +73,8 @@
   - [x] `sgb import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sgb env)"`, git 추적 경고, direnv allow 안내
   - [x] `sgb env [--print]`: 매번 SE(없으면 GUI 패스프레이즈) 확인, 데몬 세션 안 씀, trust·만료 검사, stdout이 터미널이면 거부
   - [ ] verify: 통합 테스트(미리보기 → 적용 → sgb env 출력), 실제 프로젝트는 사용자와
+- [x] 이름 변경 sagevault(sgv) → sagebox(sgb), 기존 `~/.sagevault` → `~/.sagebox` 이동
+- [x] `sgb mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
 - [ ] `sgb copy <비밀>` (클립보드, 30초 후 지움)
 
 ## 4단계 — 하드웨어 슬롯 (순차)

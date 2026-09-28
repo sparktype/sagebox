@@ -47,6 +47,11 @@ pub enum Request {
         #[serde(default)]
         project: Option<String>,
     },
+    /// 비밀 이름·만료일·프로필 목록. 값은 담지 않는다(`sgb mcp serve`용).
+    List {
+        #[serde(default)]
+        project: Option<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -65,6 +70,9 @@ pub enum Response {
     Exec {
         command: Vec<String>,
         env: BTreeMap<String, Zeroizing<String>>,
+    },
+    List {
+        inventory: serde_json::Value,
     },
 }
 
@@ -315,6 +323,16 @@ impl Daemon {
                 st.had_lease = true;
                 Ok((resp, Next::Lease(pid)))
             }
+            Request::List { project } => {
+                let Some(sess) = &st.session else {
+                    return Ok((Response::Locked, Next::Close));
+                };
+                let (_, v) = vault::open(&std::fs::read(&self.vault)?, &sess.dek)?;
+                v.check_project(project.as_deref())?;
+                self.audit(pid, "list", None, "ok")?;
+                let inventory = inventory(&v);
+                Ok((Response::List { inventory }, Next::Close))
+            }
         }
     }
 
@@ -416,6 +434,33 @@ impl Daemon {
         let line = serde_json::json!({"ts": vault::unix_now(), "pid": pid, "op": op, "profile": profile, "result": result});
         self.audit_log.lock().unwrap().append(line)
     }
+}
+
+/// 이름과 매핑만 담는다. 비밀 값은 절대 넣지 않는다.
+fn inventory(v: &vault::Vault) -> serde_json::Value {
+    let now = vault::unix_now();
+    let secrets: Vec<_> = v
+        .secrets
+        .keys()
+        .map(|name| {
+            serde_json::json!({
+                "name": name,
+                "expires": v.expires.get(name),
+                "expired": v.check_expiry([name], now).is_err(),
+            })
+        })
+        .collect();
+    let profiles: serde_json::Map<_, _> = v
+        .profiles
+        .iter()
+        .map(|(name, p)| {
+            (
+                name.clone(),
+                serde_json::json!({"env": p.env, "command": p.command}),
+            )
+        })
+        .collect();
+    serde_json::json!({"secrets": secrets, "profiles": profiles})
 }
 
 fn status(st: &State, now: SystemTime) -> Response {

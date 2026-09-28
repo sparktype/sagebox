@@ -12,6 +12,8 @@ mod import;
 #[cfg(target_os = "macos")]
 mod macos;
 mod mcp;
+#[cfg(unix)]
+mod mcp_server;
 mod namespace;
 #[cfg(unix)]
 mod prompt;
@@ -37,6 +39,7 @@ const USAGE: &str = "usage: sgb [--ns <namespace>] <command>
   sgb import <mcp.json> [--keep VAR]... [--apply]
   sgb import-env <.envrc|.env> [--keep VAR]... [--apply]
   sgb env [--print]            (for .envrc: eval \"$(sgb env)\")
+  sgb mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sgb mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
   sgb profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   sgb profile rm <name>
@@ -133,6 +136,8 @@ fn run(args: &[&str]) -> Result<()> {
             let (env, command) = parse_profile_args(rest)?;
             admin::profile_add(&vault, name, env, command)
         }
+        #[cfg(unix)]
+        ["mcp", "serve"] => mcp_server::serve(&ns),
         ["mcp", "add", server, rest @ ..] => {
             // --scope만 떼어 내고 나머지는 profile add와 같은 형식으로 읽는다.
             let dash = rest.iter().position(|a| *a == "--").unwrap_or(rest.len());
@@ -167,7 +172,7 @@ fn run(args: &[&str]) -> Result<()> {
         #[cfg(unix)]
         ["exec", profile] => client::exec(&ns, profile),
         #[cfg(not(unix))]
-        ["daemon" | "unlock" | "lock" | "status"] | ["exec", _] => {
+        ["daemon" | "unlock" | "lock" | "status"] | ["exec", _] | ["mcp", "serve"] => {
             Err("not supported on this platform yet".into())
         }
         _ => Err(USAGE.into()),
