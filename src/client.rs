@@ -20,6 +20,15 @@ fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
     if !autostart {
         return Ok(None);
     }
+    // Unix 소켓 경로 한도(macOS 104바이트, Linux 108바이트). 넘으면 데몬이 bind에 실패하고 조용히 끝난다.
+    let len = sock.as_os_str().len();
+    if len > 103 {
+        return Err(format!(
+            "socket path is too long ({len} bytes, max 103): {}; set SAGEVAULT_HOME to a shorter directory",
+            sock.display()
+        )
+        .into());
+    }
     crate::debug::log(format_args!(
         "no daemon at {}; spawning one",
         sock.display()
