@@ -406,3 +406,9 @@ cargo test se_roundtrip -- --ignored     # you must answer the system dialog you
 | A daemon is left over after a failed test | It exits on its own within 2–10 minutes |
 
 **If you forget your passphrase**, it cannot be recovered. That is by design. With a Touch ID slot you can still `unlock`, `exec` and `run`, but admin commands such as `set`, `rm` and `profile` need the passphrase. Rotate your secrets and move them into a new vault (`sagebox init`).
+
+---
+
+## License
+
+[MIT](LICENSE) © 2026 SangSun Park. You are free to use, modify and redistribute sagebox, including commercially, as long as you keep the copyright notice and license text.
