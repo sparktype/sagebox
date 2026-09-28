@@ -733,7 +733,7 @@ fn mcp_serve_lists_names_only() {
             .collect();
         assert_eq!(replies.len(), 3, "notifications get no reply");
         assert_eq!(replies[0]["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(replies[1]["result"]["tools"][1]["name"], "list");
+        assert_eq!(replies[1]["result"]["tools"][0]["name"], "list");
         replies[2]["result"]["content"][0]["text"]
             .as_str()
             .unwrap()

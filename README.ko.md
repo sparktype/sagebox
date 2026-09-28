@@ -224,12 +224,9 @@ sagebox completion bash > ~/.local/share/bash-completion/completions/sagebox   #
 
 ### sagebox MCP 서버
 
-`sagebox mcp serve`는 에이전트에게 도구 두 개를 줍니다.
+`sagebox mcp serve`는 에이전트에게 `list` 도구 하나를 줍니다. 비밀 이름·만료일과 프로필 목록(어느 환경변수에 어느 비밀이 들어가는지)을 보여 주고, 금고가 잠겨 있으면 잠겼다는 것과 푸는 방법을 알려 줍니다.
 
-- `status`: 금고가 잠겨 있는지, 몇 개의 서버가 비밀을 쓰고 있는지
-- `list`: 비밀 이름·만료일, 프로필 목록
-
-**비밀 값은 어떤 도구로도 돌려주지 않습니다.** 이 서버가 떠 있는 동안에만 `sagebox run`이 허용됩니다.
+**비밀 값은 절대 돌려주지 않습니다.** 이 서버가 떠 있는 동안에만 `sagebox run`이 허용됩니다.
 
 ---
 

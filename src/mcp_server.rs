@@ -71,24 +71,18 @@ fn handle(ns: &Ns, msg: &Value) -> std::result::Result<Value, (i32, String)> {
             "protocolVersion": params["protocolVersion"].as_str().unwrap_or(PROTOCOL),
             "capabilities": {"tools": {}},
             "serverInfo": {"name": "sagebox", "version": env!("CARGO_PKG_VERSION")},
-            "instructions": "sagebox keeps the user's API keys and passwords. These tools show secret names, profiles and lock status only; secret values are never returned. To give an MCP server a secret, ask the user to run `sagebox mcp add <server> --env VAR=secret -- <command>`. To run or debug this project with its env (replacing .envrc), use `sagebox run -- <command>` in the shell; it works only while this server is running.",
+            "instructions": "sagebox keeps the user's API keys and passwords. The `list` tool shows secret names, profiles and lock status only; secret values are never returned. To give an MCP server a secret, ask the user to run `sagebox mcp add <server> --env VAR=secret -- <command>`. To run or debug this project with its env (replacing .envrc), use `sagebox run -- <command>` in the shell; it works only while this server is running.",
         })),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({"tools": [
             {
-                "name": "status",
-                "description": "Whether this project's sagebox namespace is unlocked, and how many MCP servers currently hold secrets from it.",
-                "inputSchema": {"type": "object", "properties": {}},
-            },
-            {
                 "name": "list",
-                "description": "Secret names (with expiry dates) and profiles (MCP servers: env var -> secret name, command) in this project's sagebox namespace. Never returns secret values. Needs an unlocked session.",
+                "description": "Secret names (with expiry dates) and profiles (MCP servers: env var -> secret name, command) in this project's sagebox namespace. Never returns secret values. If the namespace is locked, says so and how to unlock it.",
                 "inputSchema": {"type": "object", "properties": {}},
             },
         ]})),
         "tools/call" => {
             let result = match params["name"].as_str().unwrap_or("") {
-                "status" => status(ns),
                 "list" => list(ns),
                 other => return Err((-32602, format!("unknown tool {other}"))),
             };
@@ -109,25 +103,6 @@ fn locked(ns: &Ns) -> String {
         ns.name,
         client::unlock_hint(ns)
     )
-}
-
-fn status(ns: &Ns) -> Result<String> {
-    Ok(match client::query(ns, &Request::Status)? {
-        None
-        | Some(Response::Status {
-            unlocked: false, ..
-        }) => locked(ns),
-        Some(Response::Status {
-            leases,
-            absolute_left_secs,
-            ..
-        }) => format!(
-            "namespace {} is unlocked ({leases} active servers, hard lock in {}m)",
-            ns.name,
-            absolute_left_secs / 60
-        ),
-        _ => return Err("unexpected response".into()),
-    })
 }
 
 fn list(ns: &Ns) -> Result<String> {

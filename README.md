@@ -224,12 +224,9 @@ Earlier rows take precedence. `sagebox ns` shows which namespace is selected. A 
 
 ### The sagebox MCP server
 
-`sagebox mcp serve` gives the agent two tools:
+`sagebox mcp serve` gives the agent one tool, `list`: secret names and expiry dates, and the list of profiles (which environment variable gets which secret). If the vault is locked, it says so and tells the agent how to unlock it.
 
-- `status`: whether the vault is locked, and how many servers are using its secrets
-- `list`: secret names and expiry dates, and the list of profiles
-
-**No tool ever returns a secret value.** `sagebox run` is only allowed while this server is running.
+**It never returns a secret value.** `sagebox run` is only allowed while this server is running.
 
 ---
 
