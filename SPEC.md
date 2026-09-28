@@ -41,7 +41,7 @@
 - **비밀 만료일.** `set <name> --expires YYYY-MM-DD`. 그 날짜의 00:00 UTC부터 해당 비밀을 쓰는 `exec`를 거부한다. `--expires` 없이 `set`하면 만료일을 지운다. 볼트의 `expires` 맵은 선택 필드라 기존 볼트와 호환된다.
 - **크로스플랫폼.** macOS·Linux를 먼저 지원한다. Windows는 구조만 열어 둔다(IPC는 named pipe, `exec`는 자식 실행 + stdio 상속). 플랫폼 전용 코드는 `cfg`로 격리한다.
 - **봉투 암호화 + 키 슬롯.** 볼트 본문은 무작위 DEK로 암호화한다. 각 슬롯은 DEK를 서로 다른 방법으로 감싼다. 패스프레이즈 슬롯은 항상 존재하며 복구 경로 역할을 한다.
-- **하드웨어 슬롯은 순차 도입.** macOS Secure Enclave(Touch ID)부터 시작한다. 서명되지 않은 바이너리에서 동작하는지 먼저 검증한 뒤 구현한다. 이후 FIDO2 `hmac-secret`, TPM2를 검토한다.
+- **하드웨어 슬롯은 순차 도입.** macOS Secure Enclave부터 시작한다. 2026-09-28 스파이크에서 서명 없는 CLI(에이전트가 띄운 프로세스 포함)로도 동작함을 확인했다. 키는 `userPresence`로 묶는다(Touch ID, Watch, 덮개를 닫았을 때는 로그인 암호). 키체인이 아니라 암호화된 SE 블롭(`toid`)을 슬롯에 둔다. 이후 FIDO2 `hmac-secret`, TPM2를 검토한다.
 
 ## 위협 모델
 

@@ -64,7 +64,7 @@
 - [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움), `sgv mcp add` (Claude Code 등록 도우미)
 
 ## 4단계 — 하드웨어 슬롯 (순차)
-- [ ] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·Touch ID가 동작하는가 → verify: 최소 실행 파일로 확인
+- [x] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·사용자 확인 → 가능 (3.9단계 참고)
 - [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)
 - [ ] FIDO2 `hmac-secret` 또는 TPM2 슬롯 검토 (Linux)
 
