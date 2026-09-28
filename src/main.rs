@@ -13,6 +13,8 @@ mod macos;
 mod namespace;
 #[cfg(unix)]
 mod prompt;
+#[cfg(target_os = "macos")]
+mod touchid;
 mod vault;
 
 use std::collections::BTreeMap;
@@ -33,7 +35,8 @@ const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
   sgv import <mcp.json> [--keep VAR]... [--apply]
   sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   sgv profile rm <name>
-  sgv unlock | lock | status
+  sgv unlock [--passphrase] | lock | status
+  sgv touchid enable | disable | status   (macOS)
   sgv exec <profile>";
 
 fn main() {
@@ -114,7 +117,17 @@ fn run(args: &[&str]) -> Result<()> {
         #[cfg(unix)]
         ["daemon"] => daemon::serve(dir),
         #[cfg(unix)]
-        ["unlock"] => client::unlock(&ns),
+        ["unlock"] => client::unlock(&ns, false),
+        #[cfg(unix)]
+        ["unlock", "--passphrase"] => client::unlock(&ns, true),
+        #[cfg(target_os = "macos")]
+        ["touchid", "enable"] => touchid::enable(&vault),
+        #[cfg(target_os = "macos")]
+        ["touchid", "disable"] => touchid::disable(&vault),
+        #[cfg(target_os = "macos")]
+        ["touchid", "status"] => touchid::status(&vault),
+        #[cfg(not(target_os = "macos"))]
+        ["touchid", ..] => Err("Touch ID is only available on macOS".into()),
         #[cfg(unix)]
         ["lock"] => client::lock(&ns),
         #[cfg(unix)]

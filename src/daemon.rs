@@ -35,6 +35,10 @@ pub enum Request {
     Unlock {
         passphrase: Zeroizing<String>,
     },
+    /// 클라이언트가 Secure Enclave 슬롯으로 푼 DEK. 데몬은 볼트를 열어 검증한 뒤 세션을 시작한다.
+    UnlockKey {
+        dek: Dek,
+    },
     Lock,
     Status,
     Exec {
@@ -288,24 +292,11 @@ impl Daemon {
             }
             Request::Unlock { passphrase } => {
                 let result = self.unlock(passphrase.as_bytes());
-                if let Ok(dek) = &result {
-                    // 감사 키는 데몬(= 세션)이 끝날 때까지 유지된다.
-                    self.audit_log
-                        .lock()
-                        .unwrap()
-                        .set_key(audit::derive_key(dek)?)?;
-                }
-                let outcome = match &result {
-                    Ok(_) => "ok".to_string(),
-                    Err(e) => format!("denied: {e}"),
-                };
-                self.audit(pid, "unlock", None, &outcome)?;
-                st.session = Some(Session {
-                    dek: result?,
-                    unlocked_at: now,
-                });
-                st.idle_since = now;
-                Ok((Response::Ok, Next::Close))
+                self.begin(pid, &mut st, now, result, "passphrase")
+            }
+            Request::UnlockKey { dek } => {
+                let result = self.check_dek(dek);
+                self.begin(pid, &mut st, now, result, "secure_enclave")
             }
             Request::Exec { profile, project } => {
                 let Some(sess) = &st.session else {
@@ -343,6 +334,41 @@ impl Daemon {
         let _ = self.audit(std::process::id() as i32, "end", None, reason);
         let _ = std::fs::remove_file(&self.sock);
         std::process::exit(0)
+    }
+
+    /// 잠금 해제 결과로 세션을 시작한다. via는 감사 로그용 해제 수단이다.
+    fn begin(
+        &self,
+        pid: i32,
+        st: &mut State,
+        now: SystemTime,
+        result: Result<Dek>,
+        via: &str,
+    ) -> Result<(Response, Next)> {
+        if let Ok(dek) = &result {
+            // 감사 키는 데몬(= 세션)이 끝날 때까지 유지된다.
+            self.audit_log
+                .lock()
+                .unwrap()
+                .set_key(audit::derive_key(dek)?)?;
+        }
+        let outcome = match &result {
+            Ok(_) => format!("ok ({via})"),
+            Err(e) => format!("denied ({via}): {e}"),
+        };
+        self.audit(pid, "unlock", None, &outcome)?;
+        st.session = Some(Session {
+            dek: result?,
+            unlocked_at: now,
+        });
+        st.idle_since = now;
+        Ok((Response::Ok, Next::Close))
+    }
+
+    fn check_dek(&self, dek: Dek) -> Result<Dek> {
+        vault::open(&std::fs::read(&self.vault)?, &dek)
+            .map_err(|_| "key does not open this vault")?;
+        Ok(dek)
     }
 
     fn unlock(&self, passphrase: &[u8]) -> Result<Dek> {

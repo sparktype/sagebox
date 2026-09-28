@@ -232,6 +232,62 @@ impl Header {
         }
         Err("wrong passphrase".into())
     }
+
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn has_slot(&self, kind: &str) -> bool {
+        self.slots.iter().any(|s| s.kind == kind)
+    }
+
+    /// 새 슬롯을 추가한다. 헤더가 바뀌므로 호출한 쪽이 seal로 본문을 다시 써야 한다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn add_slot(
+        &mut self,
+        kind: &str,
+        params: serde_json::Value,
+        kek: &[u8; 32],
+        dek: &Dek,
+    ) -> Result<()> {
+        self.slots.push(Slot::wrap(kind, params, kek, dek)?);
+        Ok(())
+    }
+
+    /// kind 슬롯을 모두 지우고 지운 개수를 돌려준다. 패스프레이즈 슬롯은 복구 경로라 지우지 않는다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn remove_slots(&mut self, kind: &str) -> usize {
+        assert_ne!(kind, PASSPHRASE, "the passphrase slot is the recovery path");
+        let before = self.slots.len();
+        self.slots.retain(|s| s.kind != kind);
+        before - self.slots.len()
+    }
+
+    /// kind 슬롯마다 kek_of(params)로 KEK를 얻어 DEK를 푼다. 처음 성공한 것을 돌려준다.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub fn unlock_slot(
+        &self,
+        kind: &str,
+        kek_of: impl Fn(&serde_json::Value) -> Result<Zeroizing<[u8; 32]>>,
+    ) -> Result<Dek> {
+        let mut last: Result<Dek> = Err(format!("no {kind} slot").into());
+        for slot in self.slots.iter().filter(|s| s.kind == kind) {
+            last = kek_of(&slot.params).and_then(|kek| slot.unwrap(&kek));
+            if last.is_ok() {
+                break;
+            }
+        }
+        last
+    }
+}
+
+/// 키 합의(ECDH) 공유 비밀을 슬롯 KEK로 만든다. context(임시 공개키 등)로 슬롯마다 다른 키가 된다.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn derive_kek(shared: &[u8], context: &[u8]) -> Result<Zeroizing<[u8; 32]>> {
+    use blake2::Blake2bMac;
+    use blake2::digest::Mac;
+    use blake2::digest::consts::U32;
+    let mut m = Blake2bMac::<U32>::new_with_salt_and_personal(Some(shared), &[], b"sbx-slot-kek")
+        .map_err(|_| "invalid shared secret length")?;
+    m.update(context);
+    Ok(Zeroizing::new(m.finalize().into_bytes().into()))
 }
 
 /// 새 DEK와 패스프레이즈 슬롯 하나로 볼트 파일을 만든다.
@@ -376,6 +432,49 @@ mod tests {
         assert_eq!(h2.slots[1], foreign);
         assert_eq!(*h2.slots[1].unwrap(&[7; 32]).unwrap(), *dek);
         assert_eq!(*h2.unlock_passphrase(b"correct horse").unwrap(), *dek);
+    }
+
+    #[test]
+    fn extra_slot_add_unlock_remove() {
+        let (file, dek, v) = fixture();
+        let (mut header, _) = Header::parse(&file).unwrap();
+        // 하드웨어 대신 고정 공유 비밀로 슬롯 API만 검증한다.
+        let (shared, epk) = ([9u8; 32], vec![4u8; 65]);
+        let kek = derive_kek(&shared, &epk).unwrap();
+        assert_ne!(
+            *kek,
+            *derive_kek(&shared, &[5u8; 65]).unwrap(),
+            "context must matter"
+        );
+        let params = serde_json::json!({ "epk": epk });
+        header
+            .add_slot("secure_enclave", params, &kek, &dek)
+            .unwrap();
+        let file = seal(&header, &v, &dek).unwrap();
+
+        let (h, _) = Header::parse(&file).unwrap();
+        assert!(h.has_slot("secure_enclave"));
+        let got = h
+            .unlock_slot("secure_enclave", |p| {
+                let epk: Vec<u8> = serde_json::from_value(p["epk"].clone())?;
+                derive_kek(&shared, &epk)
+            })
+            .unwrap();
+        assert_eq!(*got, *dek);
+        // 공유 비밀이 다르면(다른 기기, 다른 키) 풀리지 않는다.
+        assert!(
+            h.unlock_slot("secure_enclave", |_| derive_kek(&[1u8; 32], &epk))
+                .is_err()
+        );
+        assert!(
+            h.unlock_slot("missing", |_| derive_kek(&shared, &epk))
+                .is_err()
+        );
+
+        let mut h = h;
+        assert_eq!(h.remove_slots("secure_enclave"), 1);
+        assert!(!h.has_slot("secure_enclave") && h.has_slot(PASSPHRASE));
+        assert_eq!(*h.unlock_passphrase(b"correct horse").unwrap(), *dek);
     }
 
     #[test]

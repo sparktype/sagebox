@@ -63,6 +63,17 @@ pub(crate) fn edit(path: &Path, f: impl FnOnce(&mut Vault) -> Result<()>) -> Res
     vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
 }
 
+/// 패스프레이즈로 열어 헤더(키 슬롯)를 고친 뒤 다시 저장한다. 본문은 그대로다.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn edit_header(
+    path: &Path,
+    f: impl FnOnce(&mut Header, &Dek) -> Result<()>,
+) -> Result<()> {
+    let (mut header, vault, dek) = unlock(path)?;
+    f(&mut header, &dek)?;
+    vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
+}
+
 pub fn init(path: &Path) -> Result<()> {
     if path.exists() {
         return Err(format!("{} already exists", path.display()).into());

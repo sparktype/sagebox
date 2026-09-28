@@ -236,7 +236,10 @@ fn daemon_session_and_exec() {
         audit.contains(r#""profile":"github","result":"ok: gh""#),
         "{audit}"
     );
-    assert!(audit.contains("denied: wrong passphrase") && audit.contains(r#""op":"release""#));
+    assert!(
+        audit.contains("denied (passphrase): wrong passphrase")
+            && audit.contains(r#""op":"release""#)
+    );
     let mode = std::fs::metadata(home.join("audit.log"))
         .unwrap()
         .permissions()

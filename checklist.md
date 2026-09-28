@@ -59,7 +59,12 @@
   - [ ] 실제로 화면을 잠갔을 때 데몬이 종료되는지 사용자 확인 (`SAGEVAULT_DEBUG=1`로 debug.log의 `end … screen locked`)
 - [x] 개발·디버깅 환경변수 `SAGEVAULT_DEBUG`, `SAGEVAULT_NO_AUTOLOCK`
 - [x] Touch ID 스파이크: Secure Enclave 키(C Security API, `toid` 블롭 파일, `userPresence`)가 서명 없는 CLI·에이전트 맥락에서 동작. 키체인 방식은 기각(생체 항목 -34018, 빌드마다 ACL 문제)
-- [ ] `secure_enclave` 슬롯 구현: ECDH로 KEK 유도, `sgv slot add secure-enclave`, unlock·GUI 잠금 해제에서 우선 사용 후 패스프레이즈로 대체
+- [ ] `secure_enclave` 슬롯 구현
+  - [ ] vault: 슬롯 추가·제거·해제 API, 공유 비밀 → KEK 유도(BLAKE2b-MAC) → verify: 가짜 KEK 단위 테스트
+  - [ ] `src/macos.rs`: SE 키 생성(`toid` 블롭), 소프트웨어 임시 키 ECDH, SE 개인키 ECDH(대화상자) FFI
+  - [ ] `sgv touchid enable|disable|status`, `unlock`·잠긴 `exec`에서 SE 우선 → 실패·취소 시 패스프레이즈, `unlock --passphrase`
+  - [ ] 데몬 `UnlockKey { dek }` 요청(클라이언트가 푼 DEK를 검증 후 세션 시작)
+  - [ ] verify: 사용자와 실기(enable → unlock 대화상자 → exec → 취소 시 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
 - [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움), `sgv mcp add` (Claude Code 등록 도우미)
 

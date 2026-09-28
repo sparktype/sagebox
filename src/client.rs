@@ -80,7 +80,37 @@ fn unlock_with(ns: &Ns, passphrase: zeroize::Zeroizing<String>) -> Result<()> {
     Ok(())
 }
 
-pub fn unlock(ns: &Ns) -> Result<()> {
+/// Secure Enclave 슬롯이 있으면 시스템 대화상자(Touch ID·Watch·로그인 암호)로 푼다.
+/// 슬롯이 없거나 취소·실패하면 false를 돌려주고, 호출한 쪽이 패스프레이즈로 넘어간다.
+#[cfg(target_os = "macos")]
+fn try_touchid(ns: &Ns, reason: &str) -> bool {
+    if crate::debug::flag("SAGEVAULT_NO_GUI") {
+        return false;
+    }
+    let result = crate::touchid::unlock(&ns.dir.join("vault"), reason).and_then(|dek| {
+        let Some(dek) = dek else { return Ok(false) };
+        let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
+        request(&mut s, &Request::UnlockKey { dek })?;
+        Ok(true)
+    });
+    crate::debug::log(format_args!("Touch ID unlock for {}: {result:?}", ns.name));
+    result.unwrap_or_else(|e| {
+        eprintln!("sgv: Touch ID unlock failed ({e}); falling back to the passphrase");
+        false
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn try_touchid(_: &Ns, _: &str) -> bool {
+    false
+}
+
+/// passphrase_only가 아니면 Touch ID를 먼저 시도한다.
+pub fn unlock(ns: &Ns, passphrase_only: bool) -> Result<()> {
+    let reason = format!("unlock sagevault namespace \"{}\"", ns.name);
+    if !passphrase_only && try_touchid(ns, &reason) {
+        return Ok(());
+    }
     let passphrase = read_secret(&format!("passphrase for {}: ", ns.name))?;
     unlock_with(ns, passphrase)
 }
@@ -143,6 +173,9 @@ fn gui_unlock(ns: &Ns, profile: &str) -> Result<()> {
         "namespace \"{}\" to run profile \"{profile}\"\nproject: {project}\nrequested by: {parent}",
         ns.name
     );
+    if try_touchid(ns, &format!("unlock sagevault {what}")) {
+        return Ok(());
+    }
     let mut message = format!("Unlock sagevault {what}");
     let mut last = None;
     for _ in 0..3 {
