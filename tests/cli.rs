@@ -819,3 +819,50 @@ fn run_needs_live_mcp_server() {
 
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[test]
+fn hook_check_asks_before_cleaning_envrc() {
+    let base = std::env::temp_dir().join(format!("sbx-hook-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (home, project) = (base.join("h"), base.join("hookproj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let envrc = project.join(".envrc");
+    let original = "export OPENAI_API_KEY=sk-FAKEvalue123\nexport LOG_LEVEL=debug\n";
+    std::fs::write(&envrc, original).unwrap();
+
+    // 거절하면 파일을 건드리지 않고, 실패로 끝나 셸 훅이 그 디렉터리를 기억한다.
+    let o = sbx_in(&project, &home, "n\n", &["hook", "check"]);
+    let err = stderr(&o);
+    assert!(
+        !o.status.success() && err.contains("OPENAI_API_KEY [token prefix]"),
+        "{err}"
+    );
+    assert!(err.contains("left .envrc unchanged") && !err.contains("sk-FAKE"));
+    assert!(!err.contains("LOG_LEVEL"));
+    assert_eq!(std::fs::read_to_string(&envrc).unwrap(), original);
+
+    // 수락하면 import-env --apply와 같다(새 네임스페이스라 패스프레이즈 두 번).
+    let o = sbx_in(
+        &project,
+        &home,
+        "y\nprojpass1\nprojpass1\n",
+        &["hook", "check"],
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert_eq!(
+        std::fs::read_to_string(&envrc).unwrap(),
+        "export LOG_LEVEL=debug\n"
+    );
+    assert!(home.join("ns/hookproj/vault").is_file());
+
+    // 정리된 뒤에는 조용히 통과한다.
+    let o = sbx_in(&project, &home, "", &["hook", "check"]);
+    assert!(
+        o.status.success() && stderr(&o).is_empty(),
+        "{}",
+        stderr(&o)
+    );
+
+    assert!(stderr(&sbx(&home, "", &["hook", "fish"])).contains("unsupported shell"));
+    std::fs::remove_dir_all(&base).unwrap();
+}

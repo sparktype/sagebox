@@ -70,25 +70,8 @@ struct Moved {
     why: &'static str,
 }
 
-pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()> {
-    let file = file.canonicalize()?;
-    let project = file.parent().ok_or("file has no directory")?.to_path_buf();
-    let text = Zeroizing::new(std::fs::read_to_string(&file)?);
-    let lines: Vec<&str> = text.lines().collect();
-
-    let marker = project.join(".sagebox");
-    let (ns, has_marker) = if marker.is_file() {
-        (
-            namespace::parse_file(&std::fs::read_to_string(&marker)?)?,
-            true,
-        )
-    } else {
-        (namespace_for(&project)?, false)
-    };
-    namespace::validate(&ns)?;
-    let vault_path = namespace::dir(root, &ns).join("vault");
-    let new_ns = !vault_path.exists();
-
+/// 옮길 비밀 줄과, 셸이 계산하는 값이라 남겨 두는 변수 이름.
+fn scan(lines: &[&str], keep: &[&str]) -> (Vec<Moved>, Vec<String>) {
     let mut moved = vec![];
     let mut computed = vec![];
     for (index, line) in lines.iter().enumerate() {
@@ -116,6 +99,29 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
             why,
         });
     }
+    (moved, computed)
+}
+
+pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()> {
+    let file = file.canonicalize()?;
+    let project = file.parent().ok_or("file has no directory")?.to_path_buf();
+    let text = Zeroizing::new(std::fs::read_to_string(&file)?);
+    let lines: Vec<&str> = text.lines().collect();
+
+    let marker = project.join(".sagebox");
+    let (ns, has_marker) = if marker.is_file() {
+        (
+            namespace::parse_file(&std::fs::read_to_string(&marker)?)?,
+            true,
+        )
+    } else {
+        (namespace_for(&project)?, false)
+    };
+    namespace::validate(&ns)?;
+    let vault_path = namespace::dir(root, &ns).join("vault");
+    let new_ns = !vault_path.exists();
+
+    let (moved, computed) = scan(&lines, keep);
 
     println!(
         "namespace: {ns}{} (project {})",
@@ -195,6 +201,62 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
         );
     } else {
         println!("the old plaintext values may still exist in backups: rotate them if in doubt.");
+    }
+    Ok(())
+}
+
+/// `eval "$(sagebox hook zsh)"`용 스크립트. 디렉터리에 들어갈 때 `hook check`를 부르고,
+/// 거절한 디렉터리는 그 셸에서 다시 묻지 않는다.
+pub fn hook_script(shell: &str) -> Result<String> {
+    let exe = shell_quote(&std::env::current_exe()?.display().to_string());
+    let check = format!(
+        r#"_sagebox_hook() {{
+  [[ -f .envrc || -f .env ]] || return 0
+  [[ ":${{_sagebox_skip-}}:" == *":$PWD:"* ]] && return 0
+  {exe} hook check || _sagebox_skip="${{_sagebox_skip-}}:$PWD"
+}}
+"#
+    );
+    // zsh는 direnv보다 먼저 돌도록 chpwd 맨 앞에 넣는다. bash는 direnv hook 줄 뒤에 두면 앞에 붙는다.
+    let install = match shell {
+        "zsh" => "chpwd_functions=(_sagebox_hook ${chpwd_functions[@]})\n_sagebox_hook\n",
+        "bash" => {
+            "_sagebox_prompt() { [[ \"$PWD\" == \"${_sagebox_last-}\" ]] || { _sagebox_last=$PWD; _sagebox_hook; }; }\nPROMPT_COMMAND=\"_sagebox_prompt${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"\n"
+        }
+        _ => return Err(format!("unsupported shell {shell} (use zsh or bash)").into()),
+    };
+    Ok(check + install)
+}
+
+/// 현재 디렉터리의 .envrc/.env에 평문 비밀이 있으면 이름을 보여 주고 정리할지 묻는다.
+/// 거절하거나 정리하지 못하면 Err라 셸 훅이 그 디렉터리를 기억한다.
+pub fn hook_check(root: &Path) -> Result<()> {
+    for name in [".envrc", ".env"] {
+        let file = Path::new(name);
+        if !file.is_file() {
+            continue;
+        }
+        let text = Zeroizing::new(std::fs::read_to_string(file)?);
+        let lines: Vec<&str> = text.lines().collect();
+        let (moved, _) = scan(&lines, &[]);
+        if moved.is_empty() {
+            continue;
+        }
+        eprintln!("sagebox: {name} has plaintext secrets:");
+        for m in &moved {
+            eprintln!("  {} [{}]", m.var, m.why);
+        }
+        eprint!("move them into the vault and remove them from {name}? [y/N] ");
+        // 다른 프롬프트처럼 stdin에서 한 줄 읽는다. EOF면 거절로 본다.
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !answer.trim().eq_ignore_ascii_case("y") {
+            return Err(format!(
+                "left {name} unchanged; run `sagebox import-env {name} --apply` (use --keep VAR for false positives)"
+            )
+            .into());
+        }
+        import(root, file, &[], true)?;
     }
     Ok(())
 }

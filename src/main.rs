@@ -38,6 +38,7 @@ const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
   sagebox audit verify
   sagebox import <mcp.json> [--keep VAR]... [--apply]
   sagebox import-env <.envrc|.env> [--keep VAR]... [--apply]
+  sagebox hook zsh | bash       (.zshrc: eval \"$(sagebox hook zsh)\"; asks to clean .envrc on cd)
   sagebox env [--print]            (for .envrc: eval \"$(sagebox env)\")
   sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
@@ -111,6 +112,11 @@ fn run(args: &[&str]) -> Result<()> {
                 }
             }
             envfile::import(&root, Path::new(file), &keep, apply)
+        }
+        ["hook", "check"] => envfile::hook_check(&root),
+        ["hook", shell] => {
+            print!("{}", envfile::hook_script(shell)?);
+            Ok(())
         }
         #[cfg(unix)]
         ["env"] => envfile::export(&ns, false),

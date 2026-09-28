@@ -65,3 +65,4 @@
   - 게이트는 `sagebox mcp serve`의 데몬 임대(Attach)다. Run은 잠금 해제를 묻기 전에 먼저 확인해서, MCP가 없을 때 Touch ID 창이 뜨지 않게 한다.
   - 한계: 게이트는 정책이지 보안 경계가 아니다. 같은 사용자의 아무 프로세스나 `sagebox mcp serve`를 띄울 수 있다. 실제 방어는 사용자 확인(Touch ID)과 감사 로그다. 또 에이전트가 `sagebox run -- env`처럼 값을 출력하는 명령을 돌리면 값이 대화에 들어간다. `sagebox env`가 매번 확인을 요구한 이유와 같은 위험을 이 경로는 세션 동안 받아들인다.
 - 2026-09-28 import-env는 더 이상 `.envrc`에 `eval "$(sagebox env)"`를 넣지 않는다(사용자 결정). direnv가 디렉터리에 들어갈 때마다 Touch ID를 묻고 셸 전체에 값을 올리기 때문이다. 비밀 줄만 지우고 `sagebox run` 사용법을 안내한다. `sagebox env`는 수동용으로 남겨 둔다.
+- 2026-09-28 셸 훅(사용자 결정: git pre-commit이 아니라 셸 훅, 발견하면 물어보고 정리). direnv가 평문을 셸에 올리기 전에 끊으려고 zsh에서는 chpwd 맨 앞에 넣는다. 정리하면 .envrc가 바뀌어 direnv가 다시 allow를 요구하므로 평문이 올라가지 않는다. 답은 다른 프롬프트처럼 stdin에서 읽고(테스트 가능), 거절은 종료 코드로 셸에 알려 그 셸에서 같은 디렉터리를 다시 묻지 않는다. 사용자 전역 `core.hooksPath`가 `~/.dot/git-hooks`라서 저장소별 git 훅은 어차피 먹지 않는다는 점도 셸 훅 쪽을 뒷받침했다.
