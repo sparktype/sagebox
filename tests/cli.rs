@@ -672,7 +672,7 @@ fn import_envrc_and_export() {
     let rewritten = std::fs::read_to_string(&envrc).unwrap();
     assert_eq!(
         rewritten,
-        "# demo\neval \"$(sgb env)\"\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\n"
+        "# demo\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\n"
     );
     assert_eq!(
         std::fs::read_to_string(project.join(".sagebox")).unwrap(),

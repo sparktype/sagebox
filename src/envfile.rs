@@ -1,4 +1,4 @@
-// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮기고, direnv가 `eval "$(sgb env)"`로 불러오게 하는 모듈
+// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮겨 `sgb run`이 넣게 하고, 수동용 `sgb env`를 제공하는 모듈
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -7,9 +7,6 @@ use crate::admin;
 use crate::import::{Verdict, classify};
 use crate::namespace;
 use crate::vault::{self, Result, Vault};
-
-/// .envrc에 넣는 줄. 첫 비밀 줄이 있던 자리에 들어가 뒤쪽 줄의 참조 순서를 지킨다.
-const EVAL_LINE: &str = "eval \"$(sgb env)\"";
 
 fn valid_var(name: &str) -> bool {
     let mut chars = name.chars();
@@ -185,8 +182,11 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
         file.display()
     );
     println!(
-        "next: run `direnv allow {}` after reviewing the file.",
+        "next: run debug commands as `sgb run -- <command>` in {} (works only while Claude Code with the sagebox MCP server is running).",
         project.display()
+    );
+    println!(
+        "if direnv still loads the remaining lines, run `direnv allow` after reviewing the file."
     );
     if tracked_by_git(&project, &file) {
         println!(
@@ -199,7 +199,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
     Ok(())
 }
 
-/// 새 네임스페이스는 `sgb env`가 매번 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
+/// 새 네임스페이스는 `sgb run`·`sgb env`가 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
 #[cfg(target_os = "macos")]
 fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
     let result = vault::Header::parse(&bytes).and_then(|(mut h, _)| {
@@ -207,7 +207,7 @@ fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
         vault::seal(&h, v, dek)
     });
     result.unwrap_or_else(|e| {
-        eprintln!("sgb: could not enable Touch ID ({e}); `sgb env` will ask for the passphrase");
+        eprintln!("sgb: could not enable Touch ID ({e}); unlocking will ask for the passphrase");
         bytes
     })
 }
@@ -217,15 +217,10 @@ fn with_touchid(bytes: Vec<u8>, _: &Vault, _: &vault::Dek) -> Vec<u8> {
     bytes
 }
 
-/// 비밀 줄을 빼고, 첫 비밀 줄 자리에 eval 줄을 넣는다. 파일 권한은 유지한다.
+/// 비밀 줄만 뺀다. 비밀은 `sgb run`이 넣는다. 파일 권한은 유지한다.
 fn rewrite(file: &Path, lines: &[&str], moved: &[Moved]) -> Result<()> {
-    let first = moved.iter().map(|m| m.index).min().unwrap_or(0);
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
-        if i == first {
-            out.push_str(EVAL_LINE);
-            out.push('\n');
-        }
         if !moved.iter().any(|m| m.index == i) {
             out.push_str(line);
             out.push('\n');
