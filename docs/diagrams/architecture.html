@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- sagebox 현재 구현(아키텍처·exec 시퀀스·볼트 봉투 형식)을 그린 다이어그램 페이지 -->
+<!-- sagebox 현재 구현(아키텍처·exec 시퀀스·run 게이트·볼트 봉투 형식)을 그린 다이어그램 페이지 -->
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
@@ -79,7 +79,7 @@
   <div class="frame">
     <p class="eyebrow">sagebox · implementation · 2026-09-28</p>
     <h1>sagebox 현재 구현</h1>
-    <p class="lede">에이전트가 MCP 서버를 띄울 때만 비밀을 환경변수로 주입하는 로컬 데몬입니다. 볼트(SBX2), 관리 CLI, Unix 데몬과 <code>exec</code>까지 구현된 상태를 세 장으로 나눠 그렸습니다.</p>
+    <p class="lede">에이전트가 MCP 서버나 디버그 명령을 띄울 때만 비밀을 환경변수로 주입하는 로컬 데몬입니다. 볼트(SBX2), 관리 CLI, Unix 데몬, <code>exec</code>, sagebox MCP 서버와 <code>.envrc</code>를 대체하는 <code>sagebox run</code>까지 구현된 상태를 네 장으로 나눠 그렸습니다.</p>
 
     <!-- ───────────────────────── ① 아키텍처 ───────────────────────── -->
     <section>
@@ -88,7 +88,7 @@
       <div class="scroll">
       <svg viewBox="0 0 1280 680" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc">
         <title id="arch-title">sagebox 아키텍처와 신뢰 경계</title>
-        <desc id="arch-desc">같은 사용자 계정 안에서 관리 CLI는 패스프레이즈로 볼트를 직접 편집하고, 데몬은 세션 키만 들고 exec 클라이언트에 명령과 환경변수를 넘기며, 클라이언트는 execve로 MCP 서버가 되고, 다른 UID의 접속은 거부된다.</desc>
+        <desc id="arch-desc">같은 사용자 계정 안에서 에이전트가 띄운 sagebox MCP 서버는 데몬에 임대를 잡아 이름·상태만 조회하고, 관리 CLI는 패스프레이즈로 볼트를 직접 편집하고, 데몬은 세션 키만 들고 exec 클라이언트에 명령과 환경변수를 넘기며, 클라이언트는 execve로 MCP 서버가 되고, 다른 UID의 접속은 거부된다.</desc>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
           <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
@@ -142,6 +142,14 @@
         <path d="M 560,352 V 454" fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
         <rect x="568" y="396" width="36" height="12" rx="2" fill="#f5f5f5"/>
         <text class="lbl" x="586" y="405" text-anchor="middle">EXECVE</text>
+        <!-- 에이전트 → sagebox MCP (stdio) -->
+        <path d="M 320,352 V 532 Q 320,540 328,540 H 824 Q 832,540 832,532 V 514" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="640" y="534" width="121" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="700" y="543" text-anchor="middle">STDIO · STATUS / LIST</text>
+        <!-- sagebox MCP → 데몬 (임대) -->
+        <path d="M 832,454 V 364" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="844" y="403" width="73" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="880" y="412" text-anchor="middle">ATTACH LEASE</text>
         <!-- 다른 UID → 경계에서 차단 -->
         <path d="M 144,484 H 190" fill="none" stroke="#2d3142" stroke-width="1.2" stroke-dasharray="4,3"/>
         <line x1="192" y1="474" x2="192" y2="494" stroke="#2d3142" stroke-width="2"/>
@@ -198,6 +206,14 @@
         <text class="sub" x="832" y="338" text-anchor="middle">holds DEK only · sock 0600</text>
         <text class="sub" x="832" y="352" text-anchor="middle">leases · grace 30s · max 8h</text>
 
+        <!-- sagebox MCP 서버 -->
+        <rect x="744" y="456" width="176" height="56" rx="6" fill="#f5f5f5"/>
+        <rect x="744" y="456" width="176" height="56" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <rect x="752" y="462" width="24" height="12" rx="2" fill="none" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+        <text class="tag" x="764" y="471" text-anchor="middle" fill="rgba(45,49,66,0.8)">MCP</text>
+        <text class="nm" x="832" y="486" text-anchor="middle">sagebox MCP 서버</text>
+        <text class="sub" x="832" y="502" text-anchor="middle">sagebox mcp serve · no values</text>
+
         <!-- 볼트 (store) -->
         <rect x="1004" y="120" width="200" height="56" rx="6" fill="#f5f5f5"/>
         <rect x="1004" y="120" width="200" height="56" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
@@ -246,7 +262,7 @@
         <text class="leg" x="1008" y="636">TRUST BOUNDARY</text>
       </svg>
       </div>
-      <p class="caption">관리 CLI는 데몬을 거치지 않고 패스프레이즈로 볼트를 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트는 정책을 바꿀 수 없습니다. 에이전트가 고를 수 있는 것은 프로필 이름뿐이고, 명령(argv)은 볼트 안의 프로필에 고정돼 있습니다. <code>execve</code> 이후에는 같은 프로세스가 MCP 서버가 되어 에이전트와 stdio로 대화합니다. 비밀은 그 프로세스의 환경변수에만 존재합니다. 같은 UID 안의 악의적인 프로세스는 격리하지 않습니다(SPEC.md의 위협 모델 참고). 프로젝트별 네임스페이스를 쓰면 이 그림 전체(데몬, 볼트, 감사 로그)가 <code>~/.sagebox/ns/&lt;name&gt;/</code>마다 한 벌씩 따로 존재하므로, 한 프로젝트를 풀어도 다른 프로젝트는 잠긴 채로 남습니다.</p>
+      <p class="caption">관리 CLI는 데몬을 거치지 않고 패스프레이즈로 볼트를 직접 고칩니다. 그래서 세션이 풀려 있어도 에이전트는 정책을 바꿀 수 없습니다. 에이전트가 고를 수 있는 것은 프로필 이름뿐이고, 명령(argv)은 볼트 안의 프로필에 고정돼 있습니다. <code>execve</code> 이후에는 같은 프로세스가 MCP 서버가 되어 에이전트와 stdio로 대화합니다. 비밀은 그 프로세스의 환경변수에만 존재합니다. 같은 UID 안의 악의적인 프로세스는 격리하지 않습니다(SPEC.md의 위협 모델 참고). 프로젝트별 네임스페이스를 쓰면 이 그림 전체(데몬, 볼트, 감사 로그)가 <code>~/.sagebox/ns/&lt;name&gt;/</code>마다 한 벌씩 따로 존재하므로, 한 프로젝트를 풀어도 다른 프로젝트는 잠긴 채로 남습니다. 에이전트가 띄우는 <code>sagebox mcp serve</code>는 비밀 이름·만료일·프로필과 잠금 상태만 돌려주는 조회용 서버입니다. 대신 살아 있는 동안 데몬에 <code>Attach</code> 임대를 잡아 두고, 이 임대가 <code>sagebox run</code>을 허용하는 조건이 됩니다(03 참고).</p>
     </section>
 
     <!-- ───────────────────────── ② 시퀀스 ───────────────────────── -->
@@ -375,12 +391,125 @@
         <text class="leg" x="600" y="676">ACTIVE</text>
       </svg>
       </div>
-      <p class="caption">데몬은 첫 <code>exec</code>나 <code>unlock</code>에서 자동으로 뜹니다. 잠겨 있으면 exec가 GUI 대화상자로 패스프레이즈를 묻습니다. exec 연결은 응답 뒤에도 닫지 않습니다. 클라이언트가 그 소켓을 물려준 채 <code>execve</code>하므로, MCP 서버가 살아 있는 동안이 곧 임대 기간입니다. 마지막 임대가 끝나고 30초가 지나거나 8시간이 되면 데몬은 DEK를 지우고 종료합니다. 감사 로그를 쓰지 못하면 <code>ARGV + ENV</code>를 보내지 않습니다.</p>
+      <p class="caption">데몬은 첫 <code>exec</code>나 <code>unlock</code>에서 자동으로 뜹니다. 잠겨 있으면 exec가 Touch ID(없으면 GUI 대화상자의 패스프레이즈)로 묻습니다. exec 연결은 응답 뒤에도 닫지 않습니다. 클라이언트가 그 소켓을 물려준 채 <code>execve</code>하므로, MCP 서버가 살아 있는 동안이 곧 임대 기간입니다. 마지막 임대가 끝나고 30초가 지나거나 8시간이 되면 데몬은 DEK를 지우고 종료합니다. 감사 로그를 쓰지 못하면 <code>ARGV + ENV</code>를 보내지 않습니다.</p>
     </section>
 
-    <!-- ───────────────────────── ③ 봉투 형식 ───────────────────────── -->
+    <!-- ───────────────────────── ③ run 게이트 ───────────────────────── -->
     <section>
-      <p class="eyebrow">03 · Layer stack · envelope encryption</p>
+      <p class="eyebrow">03 · Sequence · sagebox run gate</p>
+      <h2>sagebox run: MCP 서버가 떠 있을 때만 .envrc 대신 env 주입</h2>
+      <div class="scroll">
+      <svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="run-title run-desc">
+        <title id="run-title">sagebox run 게이트의 메시지 순서</title>
+        <desc id="run-desc">Claude Code가 sagebox MCP 서버를 띄우면 서버가 데몬에 Attach 임대를 잡고, sagebox run이 Run을 요청하면 데몬은 임대가 없으면 거부하고, 잠겨 있으면 Touch ID로 풀게 한 뒤, 신뢰·만료 검사와 감사 기록을 거쳐 shell_env를 돌려주어 run 클라이언트가 그 env로 디버그 명령을 execve하며, Claude Code가 끝나면 임대가 풀리고 30초 뒤 잠긴다.</desc>
+        <defs>
+          <marker id="r-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+          <marker id="r-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+          <marker id="r-arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#4f5d75" stroke-width="1.2"/></marker>
+        </defs>
+        <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+        <line x1="160" y1="104" x2="160" y2="648" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="400" y1="104" x2="400" y2="648" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="640" y1="104" x2="640" y2="648" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="880" y1="104" x2="880" y2="648" stroke="rgba(235,108,54,0.45)" stroke-width="1" stroke-dasharray="4,4"/>
+        <line x1="1120" y1="104" x2="1120" y2="648" stroke="rgba(45,49,66,0.25)" stroke-width="1" stroke-dasharray="4,4"/>
+        <rect x="616" y="300" width="528" height="244" rx="4" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <rect x="616" y="300" width="40" height="16" rx="2" fill="#f5f5f5" stroke="rgba(45,49,66,0.22)" stroke-width="1"/>
+        <text class="lbl" x="636" y="312" text-anchor="middle" style="fill:#4f5d75;letter-spacing:0.12em">ALT</text>
+        <text class="lbl" x="664" y="312" style="fill:#4f5d75;letter-spacing:0.04em">[no sagebox MCP lease]</text>
+        <line x1="624" y1="344" x2="1136" y2="344" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text class="lbl" x="628" y="358" style="fill:#4f5d75;letter-spacing:0.04em">[lease · locked]</text>
+        <line x1="624" y1="436" x2="1136" y2="436" stroke="rgba(45,49,66,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+        <text class="lbl" x="628" y="450" style="fill:#4f5d75;letter-spacing:0.04em">[lease · unlocked]</text>
+        <rect x="396" y="136" width="8" height="468" fill="rgba(79,93,117,0.15)" stroke="rgba(79,93,117,0.6)" stroke-width="0.8"/>
+        <rect x="636" y="248" width="8" height="284" fill="rgba(79,93,117,0.15)" stroke="rgba(79,93,117,0.6)" stroke-width="0.8"/>
+        <rect x="876" y="168" width="8" height="468" fill="rgba(235,108,54,0.15)" stroke="rgba(235,108,54,0.6)" stroke-width="0.8"/>
+        <line x1="160" y1="140" x2="394" y2="140" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="241" y="120" width="78" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="280" y="129" text-anchor="middle">SPAWN · STDIO</text>
+        <line x1="404" y1="172" x2="874" y2="172" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="708" y="152" width="105" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="161" text-anchor="middle">ATTACH (LOCKED OK)</text>
+        <line x1="876" y1="204" x2="406" y2="204" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow)"/>
+        <rect x="476" y="184" width="89" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="520" y="193" text-anchor="middle">OK · LEASE HELD</text>
+        <line x1="160" y1="252" x2="634" y2="252" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="211" y="232" width="138" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="280" y="241" text-anchor="middle">SAGEBOX RUN -- CARGO RUN</text>
+        <line x1="644" y1="284" x2="874" y2="284" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="721" y="264" width="78" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="273" text-anchor="middle">RUN {PROJECT}</text>
+        <line x1="876" y1="334" x2="646" y2="334" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow)"/>
+        <rect x="708" y="314" width="105" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="323" text-anchor="middle">ERR: NO MCP SERVER</text>
+        <line x1="876" y1="378" x2="646" y2="378" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow)"/>
+        <rect x="740" y="358" width="40" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="367" text-anchor="middle">LOCKED</text>
+        <path d="M 644,388 H 672 Q 680,388 680,396 V 400 Q 680,408 672,408 H 646" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="684" y="392" width="138" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="688" y="401" text-anchor="start">TOUCH ID · USER PRESENCE</text>
+        <line x1="644" y1="428" x2="874" y2="428" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="716" y="408" width="89" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="417" text-anchor="middle">UNLOCKKEY → RUN</text>
+        <path d="M 884,460 H 912 Q 920,460 920,468 V 472 Q 920,480 912,480 H 886" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="924" y="464" width="148" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="928" y="473" text-anchor="start">TRUST · EXPIRY · AUDIT run</text>
+        <line x1="876" y1="504" x2="646" y2="504" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#r-arrow-accent)"/>
+        <rect x="732" y="484" width="57" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="760" y="493" text-anchor="middle" style="fill:#eb6c36">SHELL_ENV</text>
+        <line x1="644" y1="532" x2="1118" y2="532" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#r-arrow-accent)"/>
+        <rect x="964" y="512" width="73" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="1000" y="521" text-anchor="middle" style="fill:#eb6c36">EXECVE + ENV</text>
+        <line x1="160" y1="580" x2="394" y2="580" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="233" y="560" width="94" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="280" y="569" text-anchor="middle">EXIT · STDIN EOF</text>
+        <line x1="404" y1="604" x2="874" y2="604" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow-open)"/>
+        <rect x="582" y="584" width="116" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="640" y="593" text-anchor="middle">SOCKET EOF → RELEASE</text>
+        <path d="M 884,612 H 912 Q 920,612 920,620 V 624 Q 920,632 912,632 H 886" fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <rect x="924" y="616" width="121" height="12" rx="2" fill="#f5f5f5"/>
+        <text class="lbl" x="928" y="625" text-anchor="start">LEASES 0 → 30S → LOCK</text>
+        <rect x="80" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="80" y="56" width="160" height="48" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+        <text class="nm" x="160" y="78" text-anchor="middle">Claude Code</text>
+        <text class="sub" x="160" y="94" text-anchor="middle">에이전트 · 셸</text>
+        <rect x="320" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="320" y="56" width="160" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text class="nm" x="400" y="78" text-anchor="middle">sagebox MCP 서버</text>
+        <text class="sub" x="400" y="94" text-anchor="middle">sagebox mcp serve</text>
+        <rect x="560" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="560" y="56" width="160" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text class="nm" x="640" y="78" text-anchor="middle">run 클라이언트</text>
+        <text class="sub" x="640" y="94" text-anchor="middle">sagebox run -- …</text>
+        <rect x="800" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="800" y="56" width="160" height="48" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1.2"/>
+        <text class="nm" x="880" y="78" text-anchor="middle">sagebox 데몬</text>
+        <text class="sub" x="880" y="94" text-anchor="middle">agents · leases · DEK</text>
+        <rect x="1040" y="56" width="160" height="48" rx="6" fill="#f5f5f5"/>
+        <rect x="1040" y="56" width="160" height="48" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+        <text class="nm" x="1120" y="78" text-anchor="middle">디버그 프로세스</text>
+        <text class="sub" x="1120" y="94" text-anchor="middle">cargo run · npm run dev</text>
+        <line x1="32" y1="672" x2="1248" y2="672" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+        <text class="leg" x="32" y="700">LEGEND</text>
+        <line x1="112" y1="697" x2="140" y2="697" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#r-arrow)"/>
+        <text class="leg" x="148" y="700">CALL</text>
+        <line x1="208" y1="697" x2="236" y2="697" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow)"/>
+        <text class="leg" x="244" y="700">RETURN</text>
+        <line x1="320" y1="697" x2="348" y2="697" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#r-arrow-open)"/>
+        <text class="leg" x="356" y="700">ASYNC</text>
+        <line x1="424" y1="697" x2="452" y2="697" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#r-arrow-accent)"/>
+        <text class="leg" x="460" y="700">SECRET HANDOFF</text>
+        <rect x="584" y="691" width="8" height="12" fill="rgba(79,93,117,0.15)" stroke="rgba(79,93,117,0.6)" stroke-width="0.8"/>
+        <text class="leg" x="600" y="700">ACTIVE</text>
+      </svg>
+      </div>
+      <p class="caption"><code>sagebox import-env</code>가 <code>.envrc</code>의 비밀 줄을 프로젝트 네임스페이스의 <code>shell_env</code>로 옮기고 파일에서 지웁니다. 그래서 잘못 커밋될 비밀 파일이 남지 않습니다. 데몬은 Touch ID를 묻기 전에 먼저 <code>Attach</code> 임대를 확인하므로, Claude Code(와 sagebox MCP 서버)가 없으면 인증 창 없이 바로 거부합니다. 값은 셸이 아니라 <code>execve</code>한 디버그 프로세스의 환경변수에만 들어갑니다. 이 게이트는 정책일 뿐 보안 경계는 아닙니다. 같은 UID의 프로세스는 직접 <code>sagebox mcp serve</code>를 띄울 수 있고, 에이전트가 <code>sagebox run -- env</code>처럼 값을 출력하는 명령을 돌리면 값이 대화에 남습니다. 실제 방어선은 사용자 확인(Touch ID)과 감사 로그의 <code>run</code> 기록입니다.</p>
+    </section>
+
+    <!-- ───────────────────────── ④ 봉투 형식 ───────────────────────── -->
+    <section>
+      <p class="eyebrow">04 · Layer stack · envelope encryption</p>
       <h2>볼트 봉투 형식 (SBX2)</h2>
       <div class="scroll">
       <svg viewBox="0 0 1280 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="env-title env-desc">
@@ -454,7 +583,7 @@
       <p class="caption">슬롯은 모두 32바이트 KEK를 얻어 같은 DEK를 푸는 방식이라, 하드웨어 슬롯을 추가해도 본문은 다시 암호화하지 않습니다. 모르는 <code>kind</code>의 슬롯은 해석하지 않고 그대로 보존합니다. 그래서 macOS에서 추가한 슬롯이 Linux에서 저장할 때 지워지지 않습니다. 패스프레이즈 슬롯은 항상 존재하며 복구 경로 역할을 합니다.</p>
     </section>
 
-    <footer>sagebox · commit a569210 · src/vault.rs · src/admin.rs · src/daemon.rs · src/client.rs</footer>
+    <footer>sagebox · commit 10a5353 · src/vault.rs · src/admin.rs · src/daemon.rs · src/client.rs · src/mcp_server.rs · src/envfile.rs</footer>
   </div>
 </body>
 </html>
