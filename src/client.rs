@@ -122,10 +122,10 @@ fn try_touchid(_: &Ns, _: &str) -> bool {
     false
 }
 
-/// passphrase_only가 아니면 Touch ID를 먼저 시도한다.
-pub fn unlock(ns: &Ns, passphrase_only: bool) -> Result<()> {
+/// Touch ID를 먼저 시도하고, 슬롯이 없거나 취소·실패하면 패스프레이즈로 넘어간다.
+pub fn unlock(ns: &Ns) -> Result<()> {
     let reason = format!("unlock sagebox namespace \"{}\"", ns.name);
-    if !passphrase_only && try_touchid(ns, &reason) {
+    if try_touchid(ns, &reason) {
         return Ok(());
     }
     let passphrase = read_secret(&format!("passphrase for {}: ", ns.name))?;

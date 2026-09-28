@@ -54,7 +54,6 @@ _sagebox() {
       if (( CURRENT == 3 )); then _files; else compadd -- --keep --apply; fi ;;
     set) (( CURRENT == 4 )) && compadd -- --expires ;;
     audit) compadd verify ;;
-    unlock) compadd -- --passphrase ;;
     touchid) compadd enable disable status ;;
     profile) (( CURRENT == 3 )) && compadd rm ;;
     mcp)
@@ -99,7 +98,6 @@ const BASH: &str = r#"_sagebox() {
       w="--keep --apply" ;;
     set) (( pos == 2 )) && w=--expires ;;
     audit) w=verify ;;
-    unlock) w=--passphrase ;;
     touchid) w="enable disable status" ;;
     profile) (( pos == 1 )) && w=rm ;;
     mcp)

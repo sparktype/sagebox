@@ -62,7 +62,7 @@
 - [x] `secure_enclave` 슬롯 구현
   - [x] vault: 슬롯 추가·제거·해제 API, 공유 비밀 → KEK 유도(BLAKE2b-MAC) → verify: 가짜 KEK 단위 테스트
   - [x] `src/macos.rs`: SE 키 생성(`toid` 블롭), 소프트웨어 임시 키 ECDH, SE 개인키 ECDH(대화상자) FFI
-  - [x] `sagebox touchid enable|disable|status`, `unlock`·잠긴 `exec`에서 SE 우선 → 실패·취소 시 패스프레이즈, `unlock --passphrase`
+  - [x] `sagebox touchid enable|disable|status`, `unlock`·잠긴 `exec`에서 SE 우선 → 실패·취소 시 패스프레이즈
   - [x] 데몬 `UnlockKey { dek }` 요청(클라이언트가 푼 DEK를 검증 후 세션 시작)
   - [x] verify: 사용자와 실기(enable → unlock 대화상자·설명 문구 → exec → 취소 시 패스프레이즈로 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)

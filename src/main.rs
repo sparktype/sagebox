@@ -44,7 +44,7 @@ const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
   sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
   sagebox profile rm <name>      (then `mcp add` it again)
-  sagebox unlock [--passphrase] | lock | status
+  sagebox unlock | lock | status
   sagebox touchid enable | disable | status   (macOS)
   sagebox exec <profile>
   sagebox run -- <command> [args]...  (project env; only while the sagebox MCP server runs)";
@@ -157,9 +157,7 @@ fn run(args: &[&str]) -> Result<()> {
         #[cfg(unix)]
         ["daemon"] => daemon::serve(dir),
         #[cfg(unix)]
-        ["unlock"] => client::unlock(&ns, false),
-        #[cfg(unix)]
-        ["unlock", "--passphrase"] => client::unlock(&ns, true),
+        ["unlock"] => client::unlock(&ns),
         #[cfg(target_os = "macos")]
         ["touchid", "enable"] => touchid::enable(&vault),
         #[cfg(target_os = "macos")]

@@ -743,7 +743,7 @@ fn mcp_serve_lists_names_only() {
     // 잠겨 있으면 목록 대신 unlock을 안내한다.
     assert!(call().contains("sagebox unlock"));
 
-    ok(sbx(&home, "password\n", &["unlock", "--passphrase"]));
+    ok(sbx(&home, "password\n", &["unlock"]));
     let text = call();
     assert!(
         text.contains("\"gh\"") && text.contains("\"GITHUB_TOKEN\""),
@@ -798,7 +798,7 @@ fn run_needs_live_mcp_server() {
     );
     assert!(!o.status.success(), "{}", stderr(&o));
 
-    let o = sbx_in(&project, &home, "projpass1\n", &["unlock", "--passphrase"]);
+    let o = sbx_in(&project, &home, "projpass1\n", &["unlock"]);
     assert!(o.status.success(), "{}", stderr(&o));
     let o = run();
     assert!(
