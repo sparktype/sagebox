@@ -133,6 +133,11 @@ fn cf_error(err: CFErrorRef, what: &str) -> Box<dyn std::error::Error> {
         return format!("{what} failed").into();
     }
     let code = unsafe { CFErrorGetCode(err) };
+    // LAError.userCancel(-2), errSecUserCanceled(-128): 사용자가 고른 정상 경로라 짧게 알린다.
+    if code == -2 || code == -128 {
+        drop(Cf(err));
+        return format!("{what} cancelled by user").into();
+    }
     let desc = Cf(unsafe { CFCopyDescription(err) });
     let mut buf = [0 as c_char; 512];
     let text = if unsafe { CFStringGetCString(desc.0, buf.as_mut_ptr(), 512, UTF8) } != 0 {

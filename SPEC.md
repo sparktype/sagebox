@@ -36,6 +36,11 @@
   - `SAGEVAULT_DEBUG=1`: 데몬은 `<네임스페이스 디렉터리>/debug.log`(0600)에, 클라이언트는 stderr에 판단 과정(요청·결과·임대·종료 이유·데몬 기동·GUI 전환)을 남긴다. 비밀 값과 패스프레이즈는 기록하지 않는다.
   - `SAGEVAULT_NO_AUTOLOCK=1`: 잠자기·화면 잠금 자동 잠금을 끈다.
   - `SAGEVAULT_NO_GUI=1`: GUI 프롬프트를 띄우지 않는다.
+- **Touch ID 잠금 해제(macOS).** `sgv touchid enable|disable|status`. `secure_enclave` 슬롯을 추가·제거한다(추가·제거에는 패스프레이즈가 필요하다).
+  - 슬롯 파라미터는 `{blob, epk}`다. `blob`은 SE 키의 `toid`(이 Mac의 하드웨어만 풀 수 있는 암호화된 키)이고, `epk`는 추가할 때 만든 소프트웨어 임시 공개키다. KEK는 BLAKE2b-MAC(키=ECDH 공유 비밀, persona `sbx-slot-kek`, 입력=`epk`)이다.
+  - 풀 때는 `SecKeyCreateWithData(빈 데이터, {EC, private, tkid=SE, toid=blob, 사용 설명 문구})`로 키를 되살리고 `epk`와 ECDH한다. SE 키는 `userPresence`로 묶여 있어 이때 시스템 대화상자(Touch ID → Watch → 로그인 암호)가 뜬다.
+  - `sgv unlock`과 잠긴 `exec`는 SE 슬롯을 먼저 시도하고, 취소·실패하면 패스프레이즈(터미널 또는 osascript)로 넘어간다. `unlock --passphrase`는 SE를 건너뛴다. `SAGEVAULT_NO_GUI`면 SE도 건너뛴다.
+  - SE 해제는 대화상자 맥락이 있는 클라이언트가 한다. 푼 DEK는 `UnlockKey` 요청으로 데몬에 넘기고, 데몬은 볼트를 열어 검증한 뒤 세션을 시작한다. 감사 로그에는 해제 수단(`passphrase`/`secure_enclave`)을 남긴다.
 - **감사 로그.** `unlock`·`lock`·`exec` 요청(허용/거부)과 다른 UID의 접속을 `audit.log`(JSON Lines, 0600)에 기록한다. 항목은 시각, 요청 pid, 프로필, 결과, 비밀 이름이다. 비밀 값은 기록하지 않는다. 기록에 실패하면 `exec`를 거부한다.
 - **감사 로그 MAC 체인.** 데몬은 첫 `unlock`에서 DEK로부터 감사 키를 유도한다(BLAKE2b-MAC, persona `sbx-audit-key`). 이 키로는 볼트를 열 수 없고, 데몬이 종료될 때까지 보관한다. 이후 각 줄에 `seq`, `prev`(이전 줄의 mac), `mac`을 붙인다. `sgv audit verify`는 패스프레이즈로 같은 키를 얻어 수정·위조, 중간 삭제, 순번 건너뜀을 찾는다. 첫 unlock 전의 줄은 MAC 없이 기록되고 "unauthenticated"로 따로 센다. 끝부분 잘라내기와 파일 전체 삭제는 탐지하지 못한다.
 - **비밀 만료일.** `set <name> --expires YYYY-MM-DD`. 그 날짜의 00:00 UTC부터 해당 비밀을 쓰는 `exec`를 거부한다. `--expires` 없이 `set`하면 만료일을 지운다. 볼트의 `expires` 맵은 선택 필드라 기존 볼트와 호환된다.
