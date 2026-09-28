@@ -16,7 +16,6 @@ _sagebox() {
     'audit:verify the audit log'
     'import:move plaintext secrets out of an MCP config'
     'import-env:move plaintext secrets out of .envrc or .env'
-    'env:print export lines for the project env'
     'mcp:add an MCP server or run the sagebox MCP server'
     'profile:add or remove a profile'
     'unlock:unlock the session'
@@ -54,7 +53,6 @@ _sagebox() {
     import|import-env)
       if (( CURRENT == 3 )); then _files; else compadd -- --keep --apply; fi ;;
     set) (( CURRENT == 4 )) && compadd -- --expires ;;
-    env) compadd -- --print ;;
     audit) compadd verify ;;
     unlock) compadd -- --passphrase ;;
     touchid) compadd enable disable status ;;
@@ -95,7 +93,7 @@ const BASH: &str = r#"_sagebox() {
     fi
   done
   if (( pos == 0 )); then
-    COMPREPLY=($(compgen -W "--ns ns trust untrust init set rm list audit import import-env env mcp profile unlock lock status touchid exec run zsh bash completion" -- "$cur"))
+    COMPREPLY=($(compgen -W "--ns ns trust untrust init set rm list audit import import-env mcp profile unlock lock status touchid exec run zsh bash completion" -- "$cur"))
     return
   fi
   case $cmd in
@@ -103,7 +101,6 @@ const BASH: &str = r#"_sagebox() {
       if (( pos == 1 )); then COMPREPLY=($(compgen -f -- "$cur")); return; fi
       w="--keep --apply" ;;
     set) (( pos == 2 )) && w=--expires ;;
-    env) w=--print ;;
     audit) w=verify ;;
     unlock) w=--passphrase ;;
     touchid) w="enable disable status" ;;

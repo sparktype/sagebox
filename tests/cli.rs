@@ -628,7 +628,7 @@ fn mcp_add_registers_with_claude() {
 
 #[cfg(unix)]
 #[test]
-fn import_envrc_and_export() {
+fn import_envrc() {
     let base = std::env::temp_dir().join(format!("sbx-envrc-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
     let (home, project) = (base.join("home"), base.join("demo-proj"));
@@ -675,21 +675,6 @@ fn import_envrc_and_export() {
         "namespace = \"demo-proj\"\n"
     );
     assert!(home.join("ns/demo-proj/vault").is_file());
-
-    // 프로젝트 안의 sagebox env는 매번 확인(여기서는 패스프레이즈) 후 export 문을 낸다.
-    let o = sbx_in(&project, &home, "projpass1\n", &["env"]);
-    let out = stdout(&o);
-    assert!(
-        out.contains("export OPENAI_API_KEY='sk-FAKEvalue123'"),
-        "{}",
-        stderr(&o)
-    );
-    assert!(out.contains("export DB_URL='postgres://u:pw@db/app'") && !out.contains("LOG_LEVEL"));
-    assert!(
-        !sbx_in(&project, &home, "wrongpass\n", &["env"])
-            .status
-            .success()
-    );
 
     // 다시 가져오면 이미 내보내는 변수라 거부한다.
     std::fs::write(&envrc, "export OPENAI_API_KEY=sk-FAKEother999\n").unwrap();

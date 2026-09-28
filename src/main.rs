@@ -41,7 +41,6 @@ const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
   sagebox import-env <.envrc|.env> [--keep VAR]... [--apply]
   sagebox zsh | bash            (.zshrc: eval \"$(sagebox zsh)\"; asks to clean .envrc on cd)
   sagebox completion zsh | bash (tab completion script)
-  sagebox env [--print]            (for .envrc: eval \"$(sagebox env)\")
   sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
   sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
   sagebox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
@@ -124,10 +123,6 @@ fn run(args: &[&str]) -> Result<()> {
             print!("{}", envfile::hook_script(shell)?);
             Ok(())
         }
-        #[cfg(unix)]
-        ["env"] => envfile::export(&ns, false),
-        #[cfg(unix)]
-        ["env", "--print"] => envfile::export(&ns, true),
         ["import", file, flags @ ..] => {
             let (mut keep, mut apply) = (vec![], false);
             let mut it = flags.iter();

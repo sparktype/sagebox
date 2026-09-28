@@ -1,4 +1,4 @@
-// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮겨 `sagebox run`이 넣게 하고, 수동용 `sagebox env`를 제공하는 모듈
+// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮겨 `sagebox run`이 넣게 하고, cd 때 검사하는 셸 훅을 제공하는 모듈
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -265,7 +265,7 @@ pub fn hook_check(root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// 새 네임스페이스는 `sagebox run`·`sagebox env`가 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
+/// 새 네임스페이스는 `sagebox run`이 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
 #[cfg(target_os = "macos")]
 fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
     let result = vault::Header::parse(&bytes).and_then(|(mut h, _)| {
@@ -312,67 +312,8 @@ fn tracked_by_git(project: &Path, file: &Path) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-#[cfg_attr(not(unix), allow(dead_code))]
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
-}
-
-/// `sagebox env`: 매번 사용자 확인(Touch ID, 없으면 패스프레이즈)을 거쳐 `export` 문을 출력한다.
-/// 데몬 세션을 쓰지 않으므로, 세션이 풀려 있어도 에이전트가 몰래 꺼낼 수 없다.
-#[cfg(unix)]
-pub fn export(ns: &namespace::Ns, allow_tty: bool) -> Result<()> {
-    use std::io::IsTerminal;
-    if std::io::stdout().is_terminal() && !allow_tty {
-        return Err("refusing to print secrets to a terminal; use it as `eval \"$(sagebox env)\"` in .envrc (or pass --print)".into());
-    }
-    let vault_path = ns.dir.join("vault");
-    let file = std::fs::read(&vault_path)?;
-    let dek = fresh_dek(ns, &vault_path, &file)?;
-    let (_, v) = vault::open(&file, &dek)?;
-    v.check_project(
-        ns.project
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .as_deref(),
-    )?;
-    v.check_expiry(v.shell_env.values(), vault::unix_now())?;
-    for (var, secret) in &v.shell_env {
-        let value = v
-            .secrets
-            .get(secret)
-            .ok_or(format!("missing secret {secret}"))?;
-        println!("export {var}={}", shell_quote(value));
-    }
-    Ok(())
-}
-
-/// 이번 호출만을 위해 DEK를 푼다. SE 슬롯이 있으면 시스템 대화상자, 없으면 패스프레이즈.
-#[cfg(unix)]
-fn fresh_dek(ns: &namespace::Ns, vault_path: &Path, file: &[u8]) -> Result<vault::Dek> {
-    let no_gui = crate::debug::flag("SAGEBOX_NO_GUI");
-    let project = std::env::current_dir()
-        .map(|d| d.display().to_string())
-        .unwrap_or_default();
-    let what = format!(
-        "export secrets of namespace \"{}\" to the shell\nproject: {project}",
-        ns.name
-    );
-    #[cfg(target_os = "macos")]
-    if !no_gui {
-        match crate::touchid::unlock(vault_path, &what) {
-            Ok(Some(dek)) => return Ok(dek),
-            Ok(None) => {}
-            Err(e) => eprintln!("sagebox: Touch ID failed ({e}); falling back to the passphrase"),
-        }
-    }
-    let _ = vault_path; // macOS 외에서는 SE 경로가 없어 쓰이지 않는다
-    let pass = if no_gui {
-        admin::read_secret("passphrase: ")?
-    } else {
-        crate::prompt::ask(&format!("Unlock sagebox to {what}"))?
-    };
-    let (h, _) = vault::Header::parse(file)?;
-    h.unlock_passphrase(pass.as_bytes())
 }
 
 #[cfg(test)]

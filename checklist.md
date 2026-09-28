@@ -71,8 +71,8 @@
   - [x] vault: `shell_env`(셸로 내보낼 VAR → 비밀) 필드, 기존 볼트 호환
   - [x] `src/envfile.rs`: `.envrc`/`.env` 파싱(`export K=V`, `K=V`, 따옴표), 리터럴이 아닌 값(`$`, 백틱)은 제외 → verify: 파싱 단위 테스트
   - [x] `sagebox import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sagebox env)"`, git 추적 경고, direnv allow 안내
-  - [x] `sagebox env [--print]`: 매번 SE(없으면 GUI 패스프레이즈) 확인, 데몬 세션 안 씀, trust·만료 검사, stdout이 터미널이면 거부
-  - [ ] verify: 통합 테스트(미리보기 → 적용 → sagebox env 출력), 실제 프로젝트는 사용자와
+  - [x] ~~`sagebox env [--print]`~~ → 2026-09-28 삭제(`sagebox run`으로 대체)
+  - [x] verify: 통합 테스트 `import_envrc`(미리보기 → 적용), 주입은 `run_needs_live_mcp_server`
 - [x] 이름 변경 sagevault(sgv) → sagebox(sagebox), 기존 `~/.sagevault` → `~/.sagebox` 이동
 - [x] `sagebox mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
 - [x] `sagebox run -- <명령>`: MCP 서버(Attach 임대)가 있을 때만 shell_env 주입 → verify: `run_needs_live_mcp_server`

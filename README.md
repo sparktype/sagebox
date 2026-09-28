@@ -269,7 +269,7 @@ src/
 ├── mcp.rs         sagebox mcp add
 ├── mcp_server.rs  sagebox mcp serve (stdio JSON-RPC)
 ├── import.rs      MCP config import + the secret classifier (classify)
-├── envfile.rs     .envrc import, sagebox env, shell hook
+├── envfile.rs     .envrc import, shell hook
 ├── prompt.rs      GUI passphrase prompt (osascript / zenity / kdialog / pinentry)
 ├── touchid.rs     Touch ID slot management (macOS)
 ├── macos.rs       macOS system calls (screen lock, Secure Enclave)

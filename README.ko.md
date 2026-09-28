@@ -269,7 +269,7 @@ src/
 ├── mcp.rs         sagebox mcp add
 ├── mcp_server.rs  sagebox mcp serve (stdio JSON-RPC)
 ├── import.rs      MCP 설정 가져오기 + 비밀 판별기(classify)
-├── envfile.rs     .envrc 가져오기, sagebox env, 셸 훅
+├── envfile.rs     .envrc 가져오기, 셸 훅
 ├── prompt.rs      GUI 패스프레이즈 창 (osascript / zenity / kdialog / pinentry)
 ├── touchid.rs     Touch ID 슬롯 관리 (macOS)
 ├── macos.rs       macOS 시스템 호출 (화면 잠금, Secure Enclave)
