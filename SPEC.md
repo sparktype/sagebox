@@ -24,6 +24,11 @@
     - `sgv trust`는 그 네임스페이스의 패스프레이즈가 있어야 한다. 저장소 지시를 따른 에이전트가 스스로 등록하지 못하게 하기 위해서다. `untrust [dir]`로 해제하고, `list`로 목록을 본다.
     - 저장소가 `.sagevault`를 다른 네임스페이스로 바꾸면, 그쪽 목록에는 해당 디렉터리가 없으므로 다시 거부된다.
     - `--ns`와 `SAGEVAULT_NS`는 사용자가 직접 쓴 설정이라 검사하지 않는다. `default`도 전역 네임스페이스라 검사하지 않는다. 프로젝트 `.mcp.json`에 `--ns personal`이 들어 있는 경우는 에이전트의 MCP 서버 승인 화면에 드러나는 것에 기댄다.
+- **프로젝트 환경 파일 가져오기와 direnv 연동.**
+  - `sgv import-env <.envrc|.env> [--keep VAR]... [--apply]`는 리터럴 할당(`export K=V`, `K=V`, 따옴표)만 본다. 셸 계산 값(`$`, 백틱, 공백 등)과 direnv 함수 줄은 그대로 둔다.
+  - 비밀은 프로젝트 네임스페이스로 옮긴다. 네임스페이스는 파일이 있는 디렉터리의 `.sagevault`를 따르고, 없으면 디렉터리 이름에서 만든다. 새 네임스페이스는 새 패스프레이즈를 받고 macOS에서는 Touch ID 슬롯도 켠다. `.sagevault`를 만들고 프로젝트를 신뢰 등록하며, 볼트의 `shell_env`(VAR → 비밀)에 기록한다.
+  - `.envrc`는 첫 비밀 줄 자리에 `eval "$(sgv env)"`를 넣고 나머지는 유지한다. `direnv allow`는 대신 실행하지 않는다. git 추적 파일이면 기록에 남은 평문을 교체하라고 경고한다.
+  - `sgv env [--print]`는 **매번** 사용자 확인(SE 슬롯의 Touch ID/로그인 암호, 없으면 GUI 패스프레이즈)을 거쳐 `export K='V'`를 출력한다. 데몬 세션은 쓰지 않는다. 신뢰 등록과 만료일 검사를 적용하고, stdout이 터미널이면 `--print` 없이는 거부한다.
 - **MCP 등록 도우미.** `sgv mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]`는 한 번에 세 가지를 한다. 명령을 지금의 PATH에서 절대경로로 고정하고, 패스프레이즈 한 번으로 프로필을 만들며(볼트에 없는 비밀은 그 자리에서 입력), `claude mcp add -s <범위> <서버> -- <sgv> [--ns <이름>] exec <서버>`로 Claude Code에 등록한다. 범위 기본값은 `user`다(개인 자격 증명은 보통 모든 프로젝트에서 쓰기 때문이다). `claude`가 없거나 실패하면 이유를 알리고, 다른 MCP 클라이언트용 JSON 조각은 항상 출력한다.
 - **평문 MCP 설정 가져오기.** `sgv import <mcp.json> [--keep VAR]... [--apply]`는 `mcpServers` 형식(Claude Code `.mcp.json`, Claude Desktop, Cursor)의 `env` 평문 비밀을 볼트로 옮긴다.
   - 비밀은 `<서버>.<변수>`로 저장하고, 서버 이름과 같은 프로필을 만든다. 명령은 가져올 때의 PATH에서 절대경로로 고정한다. 설정은 `command: sgv`, `args: [--ns <이름>,] exec <서버>`로 바꿔 쓴다. 비밀이 아닌 변수는 설정에 남긴다.

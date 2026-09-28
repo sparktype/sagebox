@@ -74,10 +74,8 @@ pub(crate) fn edit_header(
     vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
 }
 
-pub fn init(path: &Path) -> Result<()> {
-    if path.exists() {
-        return Err(format!("{} already exists", path.display()).into());
-    }
+/// 새 패스프레이즈를 두 번 입력받아 확인한다.
+pub(crate) fn read_new_passphrase() -> Result<Zeroizing<String>> {
     let pass = read_secret("new passphrase: ")?;
     if pass.chars().count() < MIN_PASSPHRASE {
         return Err(format!("passphrase must be at least {MIN_PASSPHRASE} characters").into());
@@ -85,6 +83,14 @@ pub fn init(path: &Path) -> Result<()> {
     if *read_secret("repeat passphrase: ")? != *pass {
         return Err("passphrases do not match".into());
     }
+    Ok(pass)
+}
+
+pub fn init(path: &Path) -> Result<()> {
+    if path.exists() {
+        return Err(format!("{} already exists", path.display()).into());
+    }
+    let pass = read_new_passphrase()?;
     let (file, _) = vault::create(&Vault::default(), pass.as_bytes(), vault::DEFAULT_KDF)?;
     vault::write_atomic(path, &file)
 }

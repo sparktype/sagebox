@@ -52,3 +52,8 @@
   - 파일 기반 로그인 키체인은 쓰기·읽기가 되지만, 빌드가 바뀌면 코드 해시가 달라져 기존 항목을 지우지 못했다(ACL). 업데이트마다 문제가 생긴다.
   - **Secure Enclave 키는 C Security API만으로 된다.** `SecKeyCreateRandomKey`(tkid=SecureEnclave, 비영구, `privateKeyUsage|userPresence`)로 만들고, `SecKeyCopyAttributes`의 `toid`(427바이트 암호화 블롭)를 파일에 저장한다. `SecKeyCreateWithData(블롭, {EC, private, tkid=SE})`로 복원하고 `SecKeyCopyKeyExchangeResult`(ECDH)를 쓸 때마다 시스템 대화상자가 떴다. 에이전트가 띄운 프로세스에서도 됐다. 따라서 Rust FFI로 구현 가능하고 Swift는 필요 없다.
   - 위험: `toid`는 문서화되지 않은 속성 이름이다. CryptoKit의 `dataRepresentation`이 같은 크기의 같은 블롭을 쓰므로(2019년 이후 유지) 당장 바뀔 가능성은 낮지만, 복원이 실패하면 패스프레이즈 슬롯으로 되돌아가야 한다.
+- 2026-09-28 `.envrc` 가져오기 결정(사용자): direnv 연동, `sgv env`는 매번 Touch ID, 프로젝트별 네임스페이스.
+  - `sgv env`는 데몬 세션을 쓰지 않는다. 세션을 쓰면 풀려 있는 동안 에이전트가 셸에서 비밀을 꺼낼 수 있기 때문이다. direnv는 디렉터리 진입과 `.envrc` 변경 때만 평가하므로 매번 확인해도 부담이 작다.
+  - stdout이 터미널이면 거부한다(`--print`로 강제). 화면·대화 기록으로 비밀이 새는 것을 도구 차원에서 막는다(2026-09-28 env 노출 사고의 교훈).
+  - 셸 계산 값(`$`, 백틱)은 옮기지 않는다. 계산식을 볼트에 넣으면 의미가 바뀐다. `eval` 줄은 첫 비밀 줄 자리에 넣어 뒤쪽 줄의 참조 순서를 지킨다.
+  - `direnv allow`는 사용자의 보안 결정이라 대신 실행하지 않는다.

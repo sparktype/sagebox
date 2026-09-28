@@ -629,3 +629,80 @@ fn mcp_add_registers_with_claude() {
     drop(_cleanup);
     std::fs::remove_dir_all(&base).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn import_envrc_and_export() {
+    let base = std::env::temp_dir().join(format!("sbx-envrc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    let (home, project) = (base.join("home"), base.join("demo-proj"));
+    std::fs::create_dir_all(&project).unwrap();
+    let envrc = project.join(".envrc");
+    let original = "# demo\nexport OPENAI_API_KEY=sk-FAKEvalue123\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\nexport DB_URL=postgres://u:pw@db/app\n";
+    std::fs::write(&envrc, original).unwrap();
+    let stdout = |o: &Output| String::from_utf8_lossy(&o.stdout).into_owned();
+    let envrc_s = envrc.to_str().unwrap();
+
+    // 미리보기: 이름만 보이고 파일은 그대로다.
+    let out = stdout(&sbx(&home, "", &["import-env", envrc_s]));
+    assert!(out.contains("namespace: demo-proj (new"), "{out}");
+    assert!(
+        out.contains("OPENAI_API_KEY -> vault [token prefix]")
+            && out.contains("DB_URL -> vault [URL with password]")
+    );
+    assert!(out.contains("URL stays (computed by the shell)") && !out.contains("LOG_LEVEL ->"));
+    assert!(
+        !out.contains("sk-FAKE") && !out.contains("u:pw"),
+        "values leaked: {out}"
+    );
+    assert_eq!(std::fs::read_to_string(&envrc).unwrap(), original);
+
+    // 적용: 새 네임스페이스라 새 패스프레이즈를 두 번 받는다.
+    let o = sbx(
+        &home,
+        "projpass1\nprojpass1\n",
+        &["import-env", envrc_s, "--apply"],
+    );
+    assert!(
+        stdout(&o).contains("moved 2 secrets into namespace demo-proj"),
+        "{}{}",
+        stdout(&o),
+        stderr(&o)
+    );
+    let rewritten = std::fs::read_to_string(&envrc).unwrap();
+    assert_eq!(
+        rewritten,
+        "# demo\neval \"$(sgv env)\"\nexport LOG_LEVEL=debug\nexport URL=\"https://$HOST/api\"\nlayout python\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(project.join(".sagevault")).unwrap(),
+        "namespace = \"demo-proj\"\n"
+    );
+    assert!(home.join("ns/demo-proj/vault").is_file());
+
+    // 프로젝트 안의 sgv env는 매번 확인(여기서는 패스프레이즈) 후 export 문을 낸다.
+    let o = sbx_in(&project, &home, "projpass1\n", &["env"]);
+    let out = stdout(&o);
+    assert!(
+        out.contains("export OPENAI_API_KEY='sk-FAKEvalue123'"),
+        "{}",
+        stderr(&o)
+    );
+    assert!(out.contains("export DB_URL='postgres://u:pw@db/app'") && !out.contains("LOG_LEVEL"));
+    assert!(
+        !sbx_in(&project, &home, "wrongpass\n", &["env"])
+            .status
+            .success()
+    );
+
+    // 다시 가져오면 이미 내보내는 변수라 거부한다.
+    std::fs::write(&envrc, "export OPENAI_API_KEY=sk-FAKEother999\n").unwrap();
+    let o = sbx(&home, "projpass1\n", &["import-env", envrc_s, "--apply"]);
+    assert!(
+        stderr(&o).contains("already exported by namespace demo-proj"),
+        "{}",
+        stderr(&o)
+    );
+
+    std::fs::remove_dir_all(&base).unwrap();
+}

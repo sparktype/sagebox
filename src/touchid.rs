@@ -16,15 +16,21 @@ pub fn enable(vault_path: &Path) -> Result<()> {
         if h.has_slot(KIND) {
             return Err("Touch ID is already enabled for this namespace".into());
         }
-        let se = macos::se_create()?;
-        let (epk, shared) = macos::ephemeral_ecdh(&se.public)?;
-        let kek = vault::derive_kek(&shared, &epk)?;
-        h.add_slot(KIND, json!({ "blob": se.blob, "epk": epk }), &kek, dek)
+        add_slot(h, dek)
     })?;
     println!(
         "Touch ID enabled. `sgv unlock` and locked `sgv exec` will ask Touch ID (or your Mac login password when the lid is closed)."
     );
     Ok(())
+}
+
+/// 새 SE 키를 만들고 그 키로 DEK를 감싼 슬롯을 헤더에 추가한다(대화상자 없음).
+/// 호출한 쪽이 seal로 볼트를 다시 써야 한다.
+pub fn add_slot(h: &mut Header, dek: &Dek) -> Result<()> {
+    let se = macos::se_create()?;
+    let (epk, shared) = macos::ephemeral_ecdh(&se.public)?;
+    let kek = vault::derive_kek(&shared, &epk)?;
+    h.add_slot(KIND, json!({ "blob": se.blob, "epk": epk }), &kek, dek)
 }
 
 pub fn disable(vault_path: &Path) -> Result<()> {

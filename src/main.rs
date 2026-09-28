@@ -7,6 +7,7 @@ mod client;
 mod daemon;
 #[cfg(unix)]
 mod debug;
+mod envfile;
 mod import;
 #[cfg(target_os = "macos")]
 mod macos;
@@ -34,6 +35,8 @@ const USAGE: &str = "usage: sgv [--ns <namespace>] <command>
   sgv list
   sgv audit verify
   sgv import <mcp.json> [--keep VAR]... [--apply]
+  sgv import-env <.envrc|.env> [--keep VAR]... [--apply]
+  sgv env [--print]            (for .envrc: eval \"$(sgv env)\")
   sgv mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
   sgv profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
   sgv profile rm <name>
@@ -94,6 +97,22 @@ fn run(args: &[&str]) -> Result<()> {
         ["set", name, "--expires", date] => admin::set(&vault, name, Some(date)),
         ["rm", name] => admin::rm(&vault, name),
         ["list"] => admin::list(&vault),
+        ["import-env", file, flags @ ..] => {
+            let (mut keep, mut apply) = (vec![], false);
+            let mut it = flags.iter();
+            while let Some(f) = it.next() {
+                match *f {
+                    "--apply" => apply = true,
+                    "--keep" => keep.push(*it.next().ok_or("--keep needs a variable name")?),
+                    _ => return Err(USAGE.into()),
+                }
+            }
+            envfile::import(&root, Path::new(file), &keep, apply)
+        }
+        #[cfg(unix)]
+        ["env"] => envfile::export(&ns, false),
+        #[cfg(unix)]
+        ["env", "--print"] => envfile::export(&ns, true),
         ["import", file, flags @ ..] => {
             let (mut keep, mut apply) = (vec![], false);
             let mut it = flags.iter();
@@ -167,7 +186,7 @@ fn data_root() -> Result<PathBuf> {
 }
 
 /// 없으면 만든다. Unix는 중간 디렉터리까지 0700.
-fn create_private_dir(dir: &Path) -> Result<()> {
+pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
     let mut b = std::fs::DirBuilder::new();
     b.recursive(true);
     #[cfg(unix)]

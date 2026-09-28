@@ -40,7 +40,7 @@ pub fn dir(root: &Path, name: &str) -> PathBuf {
 }
 
 /// `namespace = "acme"` 한 줄을 읽는다. 따옴표는 있어도 없어도 된다.
-fn parse_file(content: &str) -> Result<String> {
+pub(crate) fn parse_file(content: &str) -> Result<String> {
     for line in content.lines() {
         if let Some((key, value)) = line.split_once('=')
             && key.trim() == "namespace"

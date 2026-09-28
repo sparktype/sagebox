@@ -67,6 +67,12 @@
   - [x] verify: 사용자와 실기(enable → unlock 대화상자·설명 문구 → exec → 취소 시 패스프레이즈로 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
 - [x] `sgv mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]` → 명령 절대경로 고정, 없는 비밀은 그 자리에서 입력, 프로필 생성, `claude mcp add` 실행(없으면 수동 안내), 설정 JSON 조각 출력 → verify: 가짜 claude로 인자 검증하는 통합 테스트
+- [ ] `.envrc` 가져오기 + direnv 연동
+  - [x] vault: `shell_env`(셸로 내보낼 VAR → 비밀) 필드, 기존 볼트 호환
+  - [x] `src/envfile.rs`: `.envrc`/`.env` 파싱(`export K=V`, `K=V`, 따옴표), 리터럴이 아닌 값(`$`, 백틱)은 제외 → verify: 파싱 단위 테스트
+  - [x] `sgv import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagevault), 없으면 init + Touch ID, `.sagevault`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sgv env)"`, git 추적 경고, direnv allow 안내
+  - [x] `sgv env [--print]`: 매번 SE(없으면 GUI 패스프레이즈) 확인, 데몬 세션 안 씀, trust·만료 검사, stdout이 터미널이면 거부
+  - [ ] verify: 통합 테스트(미리보기 → 적용 → sgv env 출력), 실제 프로젝트는 사용자와
 - [ ] `sgv copy <비밀>` (클립보드, 30초 후 지움)
 
 ## 4단계 — 하드웨어 슬롯 (순차)
