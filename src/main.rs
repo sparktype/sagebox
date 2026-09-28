@@ -28,30 +28,30 @@ use namespace::Ns;
 
 use vault::Result;
 
-const USAGE: &str = "usage: sgb [--ns <namespace>] <command>
-  sgb ns
-  sgb trust | untrust [dir]
-  sgb init
-  sgb set <name> [--expires YYYY-MM-DD]
-  sgb rm <name>
-  sgb list
-  sgb audit verify
-  sgb import <mcp.json> [--keep VAR]... [--apply]
-  sgb import-env <.envrc|.env> [--keep VAR]... [--apply]
-  sgb env [--print]            (for .envrc: eval \"$(sgb env)\")
-  sgb mcp serve                (stdio MCP server: secret names, profiles, lock status)
-  sgb mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
-  sgb profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
-  sgb profile rm <name>
-  sgb unlock [--passphrase] | lock | status
-  sgb touchid enable | disable | status   (macOS)
-  sgb exec <profile>
-  sgb run -- <command> [args]...  (project env; only while the sagebox MCP server runs)";
+const USAGE: &str = "usage: sagebox [--ns <namespace>] <command>
+  sagebox ns
+  sagebox trust | untrust [dir]
+  sagebox init
+  sagebox set <name> [--expires YYYY-MM-DD]
+  sagebox rm <name>
+  sagebox list
+  sagebox audit verify
+  sagebox import <mcp.json> [--keep VAR]... [--apply]
+  sagebox import-env <.envrc|.env> [--keep VAR]... [--apply]
+  sagebox env [--print]            (for .envrc: eval \"$(sagebox env)\")
+  sagebox mcp serve                (stdio MCP server: secret names, profiles, lock status)
+  sagebox mcp add <server> [--env ENV=secret]... [--scope local|user|project] -- <command> [args]...
+  sagebox profile add <name> [--env ENV=secret]... -- <absolute-command> [args]...
+  sagebox profile rm <name>
+  sagebox unlock [--passphrase] | lock | status
+  sagebox touchid enable | disable | status   (macOS)
+  sagebox exec <profile>
+  sagebox run -- <command> [args]...  (project env; only while the sagebox MCP server runs)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = run(&args.iter().map(String::as_str).collect::<Vec<_>>()) {
-        eprintln!("sgb: {e}");
+        eprintln!("sagebox: {e}");
         std::process::exit(1);
     }
 }

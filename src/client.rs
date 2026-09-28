@@ -69,9 +69,9 @@ fn spawn_daemon(ns: &str) -> Result<()> {
 /// 이 네임스페이스를 푸는 명령. default가 아니면 --ns를 붙인다.
 pub(crate) fn unlock_hint(ns: &Ns) -> String {
     if ns.name == namespace::DEFAULT {
-        "sgb unlock".into()
+        "sagebox unlock".into()
     } else {
-        format!("sgb --ns {} unlock", ns.name)
+        format!("sagebox --ns {} unlock", ns.name)
     }
 }
 
@@ -112,7 +112,7 @@ fn try_touchid(ns: &Ns, reason: &str) -> bool {
     });
     crate::debug::log(format_args!("Touch ID unlock for {}: {result:?}", ns.name));
     result.unwrap_or_else(|e| {
-        eprintln!("sgb: Touch ID unlock failed ({e}); falling back to the passphrase");
+        eprintln!("sagebox: Touch ID unlock failed ({e}); falling back to the passphrase");
         false
     })
 }
@@ -236,7 +236,7 @@ pub fn exec(ns: &Ns, profile: &str) -> Result<()> {
     Err(format!("exec {}: {err}", command[0]).into())
 }
 
-/// `sgb mcp serve`용 임대. 데몬이 없으면 띄운다. 반환한 소켓을 닫으면 임대가 끝난다.
+/// `sagebox mcp serve`용 임대. 데몬이 없으면 띄운다. 반환한 소켓을 닫으면 임대가 끝난다.
 pub(crate) fn attach(ns: &Ns) -> Result<UnixStream> {
     let mut s = connect(ns, true)?.ok_or("daemon unavailable")?;
     request(&mut s, &Request::Attach)?;

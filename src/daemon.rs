@@ -47,14 +47,14 @@ pub enum Request {
         #[serde(default)]
         project: Option<String>,
     },
-    /// `sgb mcp serve`가 잡는 임대. 잠긴 동안에도 받는다. 이 임대가 있어야 Run이 된다.
+    /// `sagebox mcp serve`가 잡는 임대. 잠긴 동안에도 받는다. 이 임대가 있어야 Run이 된다.
     Attach,
-    /// 네임스페이스의 shell_env를 돌려받아 `sgb run`이 명령에 넣는다.
+    /// 네임스페이스의 shell_env를 돌려받아 `sagebox run`이 명령에 넣는다.
     Run {
         #[serde(default)]
         project: Option<String>,
     },
-    /// 비밀 이름·만료일·프로필 목록. 값은 담지 않는다(`sgb mcp serve`용).
+    /// 비밀 이름·만료일·프로필 목록. 값은 담지 않는다(`sagebox mcp serve`용).
     List {
         #[serde(default)]
         project: Option<String>,
@@ -116,7 +116,7 @@ struct State {
     session: Option<Session>,
     /// 살아 있는 임대 수 (= sagebox로 띄운 MCP 서버 수 + sagebox MCP 서버 수)
     leases: usize,
-    /// 그중 `sgb mcp serve`가 잡은 임대 수. 0이면 Run을 거부한다.
+    /// 그중 `sagebox mcp serve`가 잡은 임대 수. 0이면 Run을 거부한다.
     agents: usize,
     /// 임대가 0이 된 시각. 잠긴 동안에는 마지막 요청 시각.
     idle_since: SystemTime,
@@ -472,7 +472,8 @@ impl Daemon {
         v.check_project(project)?;
         if v.shell_env.is_empty() {
             return Err(
-                "this namespace has no project env; add it with `sgb import-env <.envrc>`".into(),
+                "this namespace has no project env; add it with `sagebox import-env <.envrc>`"
+                    .into(),
             );
         }
         v.check_expiry(v.shell_env.values(), vault::unix_now())?;

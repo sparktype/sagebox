@@ -32,7 +32,7 @@ pub struct Vault {
     /// .sagebox 파일로 이 네임스페이스를 고를 수 있는 프로젝트 디렉터리(정규화 경로).
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub trusted: BTreeSet<String>,
-    /// `sgb env`가 셸(direnv)로 내보낼 환경변수 → 비밀 이름. `sgb import-env`가 채운다.
+    /// `sagebox env`가 셸(direnv)로 내보낼 환경변수 → 비밀 이름. `sagebox import-env`가 채운다.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shell_env: BTreeMap<String, String>,
 }
@@ -43,7 +43,7 @@ impl Vault {
     pub fn check_project(&self, project: Option<&str>) -> Result<()> {
         match project {
             Some(dir) if !self.trusted.contains(dir) => Err(format!(
-                "project {dir} is not trusted for this namespace; run `sgb trust` there (needs the namespace passphrase)"
+                "project {dir} is not trusted for this namespace; run `sagebox trust` there (needs the namespace passphrase)"
             )
             .into()),
             _ => Ok(()),

@@ -19,7 +19,7 @@ pub fn enable(vault_path: &Path) -> Result<()> {
         add_slot(h, dek)
     })?;
     println!(
-        "Touch ID enabled. `sgb unlock` and locked `sgb exec` will ask Touch ID (or your Mac login password when the lid is closed)."
+        "Touch ID enabled. `sagebox unlock` and locked `sagebox exec` will ask Touch ID (or your Mac login password when the lid is closed)."
     );
     Ok(())
 }

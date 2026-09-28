@@ -48,7 +48,7 @@ pub(crate) fn read_secret(prompt: &str) -> Result<Zeroizing<String>> {
 
 fn unlock(path: &Path) -> Result<(Header, Vault, Dek)> {
     let file = std::fs::read(path)
-        .map_err(|e| format!("{}: {e} (run `sgb init` first)", path.display()))?;
+        .map_err(|e| format!("{}: {e} (run `sagebox init` first)", path.display()))?;
     let (header, _) = Header::parse(&file)?;
     let dek = header.unlock_passphrase(read_secret("passphrase: ")?.as_bytes())?;
     let (header, vault) = vault::open(&file, &dek)?;

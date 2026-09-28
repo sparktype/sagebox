@@ -1,4 +1,4 @@
-// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮겨 `sgb run`이 넣게 하고, 수동용 `sgb env`를 제공하는 모듈
+// 프로젝트 .envrc/.env의 평문 비밀을 프로젝트 네임스페이스로 옮겨 `sagebox run`이 넣게 하고, 수동용 `sagebox env`를 제공하는 모듈
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -182,7 +182,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
         file.display()
     );
     println!(
-        "next: run debug commands as `sgb run -- <command>` in {} (works only while Claude Code with the sagebox MCP server is running).",
+        "next: run debug commands as `sagebox run -- <command>` in {} (works only while Claude Code with the sagebox MCP server is running).",
         project.display()
     );
     println!(
@@ -199,7 +199,7 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
     Ok(())
 }
 
-/// 새 네임스페이스는 `sgb run`·`sgb env`가 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
+/// 새 네임스페이스는 `sagebox run`·`sagebox env`가 Touch ID로 확인하도록 SE 슬롯을 바로 켠다(macOS).
 #[cfg(target_os = "macos")]
 fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
     let result = vault::Header::parse(&bytes).and_then(|(mut h, _)| {
@@ -207,7 +207,9 @@ fn with_touchid(bytes: Vec<u8>, v: &Vault, dek: &vault::Dek) -> Vec<u8> {
         vault::seal(&h, v, dek)
     });
     result.unwrap_or_else(|e| {
-        eprintln!("sgb: could not enable Touch ID ({e}); unlocking will ask for the passphrase");
+        eprintln!(
+            "sagebox: could not enable Touch ID ({e}); unlocking will ask for the passphrase"
+        );
         bytes
     })
 }
@@ -217,7 +219,7 @@ fn with_touchid(bytes: Vec<u8>, _: &Vault, _: &vault::Dek) -> Vec<u8> {
     bytes
 }
 
-/// 비밀 줄만 뺀다. 비밀은 `sgb run`이 넣는다. 파일 권한은 유지한다.
+/// 비밀 줄만 뺀다. 비밀은 `sagebox run`이 넣는다. 파일 권한은 유지한다.
 fn rewrite(file: &Path, lines: &[&str], moved: &[Moved]) -> Result<()> {
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
@@ -249,13 +251,13 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-/// `sgb env`: 매번 사용자 확인(Touch ID, 없으면 패스프레이즈)을 거쳐 `export` 문을 출력한다.
+/// `sagebox env`: 매번 사용자 확인(Touch ID, 없으면 패스프레이즈)을 거쳐 `export` 문을 출력한다.
 /// 데몬 세션을 쓰지 않으므로, 세션이 풀려 있어도 에이전트가 몰래 꺼낼 수 없다.
 #[cfg(unix)]
 pub fn export(ns: &namespace::Ns, allow_tty: bool) -> Result<()> {
     use std::io::IsTerminal;
     if std::io::stdout().is_terminal() && !allow_tty {
-        return Err("refusing to print secrets to a terminal; use it as `eval \"$(sgb env)\"` in .envrc (or pass --print)".into());
+        return Err("refusing to print secrets to a terminal; use it as `eval \"$(sagebox env)\"` in .envrc (or pass --print)".into());
     }
     let vault_path = ns.dir.join("vault");
     let file = std::fs::read(&vault_path)?;
@@ -294,7 +296,7 @@ fn fresh_dek(ns: &namespace::Ns, vault_path: &Path, file: &[u8]) -> Result<vault
         match crate::touchid::unlock(vault_path, &what) {
             Ok(Some(dek)) => return Ok(dek),
             Ok(None) => {}
-            Err(e) => eprintln!("sgb: Touch ID failed ({e}); falling back to the passphrase"),
+            Err(e) => eprintln!("sagebox: Touch ID failed ({e}); falling back to the passphrase"),
         }
     }
     let _ = vault_path; // macOS 외에서는 SE 경로가 없어 쓰이지 않는다

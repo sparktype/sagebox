@@ -3,11 +3,6 @@ name = "sagebox"
 version = "0.1.0"
 edition = "2024"
 
-# 패키지는 sagebox, 실행 명령은 짧게 sgb
-[[bin]]
-name = "sgb"
-path = "src/main.rs"
-
 [dependencies]
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc", "zeroize"] }
 blake2 = { version = "0.11", features = ["zeroize"] }

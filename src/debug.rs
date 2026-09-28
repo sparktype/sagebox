@@ -43,6 +43,6 @@ pub fn log(msg: std::fmt::Arguments) {
         Some(f) => {
             let _ = writeln!(f.lock().unwrap(), "{line}");
         }
-        None => eprintln!("sgb debug: {line}"),
+        None => eprintln!("sagebox debug: {line}"),
     }
 }

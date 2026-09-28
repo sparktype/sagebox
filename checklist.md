@@ -16,7 +16,7 @@
 - [x] `unlock` / `lock` / `status`
 - [x] `exec <profile>`: 요청 → argv/env 수신 → execve
 - [x] 감사 로그 (JSON Lines)
-- [x] verify: `sgb exec` 로 `env` 를 고정한 테스트 프로필이 값을 받는지, 잠금 상태에서 거부되는지
+- [x] verify: `sagebox exec` 로 `env` 를 고정한 테스트 프로필이 값을 받는지, 잠금 상태에서 거부되는지
 
 - [ ] Linux 실기 검증 (`SO_PEERCRED` 경로는 컴파일·clippy만 통과, 실행은 안 해 봄)
 
@@ -41,18 +41,18 @@
 - [x] 결정 순서: `--ns` > `SAGEBOX_NS` > 상위 탐색한 `.sagebox` 파일(`namespace = "acme"`) > default
 - [x] 이름 검증 `[a-z0-9][a-z0-9_-]{0,31}` (경로 탈출 방지, 소켓 경로 길이 제한)
 - [x] 자동 기동 데몬에 네임스페이스 전달, GUI 프롬프트·status에 네임스페이스와 프로젝트 표시
-- [x] `sgb ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
+- [x] `sagebox ns`: 현재 네임스페이스와 그 출처, 존재하는 목록
 - [x] verify: 결정 순서·파싱·검증 단위 테스트, 두 네임스페이스 격리 통합 테스트
 
 - [x] 프로젝트 신뢰 등록 (`trust`/`untrust`, 볼트에 저장, 데몬이 검사)
 
-## 3.8단계 — 평문 MCP 설정 가져오기 (`sgb import`)
+## 3.8단계 — 평문 MCP 설정 가져오기 (`sagebox import`)
 - [x] `src/import.rs`: `mcpServers` JSON 파싱, env 변수 분류(값 모양 + 이름 규칙, 애매하면 비밀), 명령 절대경로 고정
 - [x] 기본은 미리보기, `--apply`로 볼트(비밀·프로필)와 설정 파일을 원자적으로 바꾼다. `--keep VAR`, 값은 절대 출력하지 않는다
-- [x] 이미 sgb로 관리 중인 서버와 비밀이 없는 서버는 건너뛴다. 이름 충돌은 쓰기 전에 전부 검사한다
+- [x] 이미 sagebox로 관리 중인 서버와 비밀이 없는 서버는 건너뛴다. 이름 충돌은 쓰기 전에 전부 검사한다
 - [x] verify: 분류 단위 테스트, 미리보기→적용→exec 통합 테스트, 적용 후 설정 파일에 평문 없음
 - [ ] (보류, 2026-09-28 사용자 결정) `--assist`: 애매한 변수 **이름만** Jev로 판단. 재개 시 결정할 것: HTTP는 시스템 curl + stdin 헤더, API 키는 볼트에 보관
-- [ ] (보류) `sgb trust --scan`: 저장소 지시 파일을 Jev로 검사(옵트인, 경고만)
+- [ ] (보류) `sagebox trust --scan`: 저장소 지시 파일을 Jev로 검사(옵트인, 경고만)
 
 ## 3.9단계 — Mac 편의 기능 (사용자 결정 순서)
 - [x] 잠자기 감지(벽시계 − 단조 시계 차이 > 30초)와 화면 잠금 감지(macOS `CGSSessionScreenIsLocked`) 시 데몬 종료 → verify: 잠자기 판정 단위 테스트, 세션 조회 실기(잠금 해제 상태에서 키 없음 확인)
@@ -62,21 +62,21 @@
 - [x] `secure_enclave` 슬롯 구현
   - [x] vault: 슬롯 추가·제거·해제 API, 공유 비밀 → KEK 유도(BLAKE2b-MAC) → verify: 가짜 KEK 단위 테스트
   - [x] `src/macos.rs`: SE 키 생성(`toid` 블롭), 소프트웨어 임시 키 ECDH, SE 개인키 ECDH(대화상자) FFI
-  - [x] `sgb touchid enable|disable|status`, `unlock`·잠긴 `exec`에서 SE 우선 → 실패·취소 시 패스프레이즈, `unlock --passphrase`
+  - [x] `sagebox touchid enable|disable|status`, `unlock`·잠긴 `exec`에서 SE 우선 → 실패·취소 시 패스프레이즈, `unlock --passphrase`
   - [x] 데몬 `UnlockKey { dek }` 요청(클라이언트가 푼 DEK를 검증 후 세션 시작)
   - [x] verify: 사용자와 실기(enable → unlock 대화상자·설명 문구 → exec → 취소 시 패스프레이즈로 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
-- [x] `sgb mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]` → 명령 절대경로 고정, 없는 비밀은 그 자리에서 입력, 프로필 생성, `claude mcp add` 실행(없으면 수동 안내), 설정 JSON 조각 출력 → verify: 가짜 claude로 인자 검증하는 통합 테스트
+- [x] `sagebox mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]` → 명령 절대경로 고정, 없는 비밀은 그 자리에서 입력, 프로필 생성, `claude mcp add` 실행(없으면 수동 안내), 설정 JSON 조각 출력 → verify: 가짜 claude로 인자 검증하는 통합 테스트
 - [ ] `.envrc` 가져오기 + direnv 연동
   - [x] vault: `shell_env`(셸로 내보낼 VAR → 비밀) 필드, 기존 볼트 호환
   - [x] `src/envfile.rs`: `.envrc`/`.env` 파싱(`export K=V`, `K=V`, 따옴표), 리터럴이 아닌 값(`$`, 백틱)은 제외 → verify: 파싱 단위 테스트
-  - [x] `sgb import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sgb env)"`, git 추적 경고, direnv allow 안내
-  - [x] `sgb env [--print]`: 매번 SE(없으면 GUI 패스프레이즈) 확인, 데몬 세션 안 씀, trust·만료 검사, stdout이 터미널이면 거부
-  - [ ] verify: 통합 테스트(미리보기 → 적용 → sgb env 출력), 실제 프로젝트는 사용자와
-- [x] 이름 변경 sagevault(sgv) → sagebox(sgb), 기존 `~/.sagevault` → `~/.sagebox` 이동
-- [x] `sgb mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
-- [x] `sgb run -- <명령>`: MCP 서버(Attach 임대)가 있을 때만 shell_env 주입 → verify: `run_needs_live_mcp_server`
-- [ ] `sgb copy <비밀>` (클립보드, 30초 후 지움)
+  - [x] `sagebox import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sagebox env)"`, git 추적 경고, direnv allow 안내
+  - [x] `sagebox env [--print]`: 매번 SE(없으면 GUI 패스프레이즈) 확인, 데몬 세션 안 씀, trust·만료 검사, stdout이 터미널이면 거부
+  - [ ] verify: 통합 테스트(미리보기 → 적용 → sagebox env 출력), 실제 프로젝트는 사용자와
+- [x] 이름 변경 sagevault(sgv) → sagebox(sagebox), 기존 `~/.sagevault` → `~/.sagebox` 이동
+- [x] `sagebox mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
+- [x] `sagebox run -- <명령>`: MCP 서버(Attach 임대)가 있을 때만 shell_env 주입 → verify: `run_needs_live_mcp_server`
+- [ ] `sagebox copy <비밀>` (클립보드, 30초 후 지움)
 
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [x] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·사용자 확인 → 가능 (3.9단계 참고)
