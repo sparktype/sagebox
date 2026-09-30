@@ -307,6 +307,7 @@ cargo check --all-targets --target x86_64-pc-windows-msvc
 Point `SAGEBOX_HOME` at a scratch folder:
 
 ```sh
+mkdir -m 700 /tmp/sbx-play
 export SAGEBOX_HOME=/tmp/sbx-play
 export SAGEBOX_NO_GUI=1          # ask in the terminal instead of a GUI dialog
 export SAGEBOX_DEBUG=1           # log decisions to stderr and debug.log
@@ -314,6 +315,8 @@ export SAGEBOX_DEBUG=1           # log decisions to stderr and debug.log
 ./target/debug/sagebox init
 printf 'mypassword\nsecret-value\n' | ./target/debug/sagebox set demo
 ```
+
+`SAGEBOX_HOME` must be a real directory owned by you with mode `0700`; sagebox refuses symlinks and looser existing directories because they could expose its local socket.
 
 When stdin is not a terminal (a pipe), passphrases and values are read **one line at a time, in order**, from stdin. The tests rely on this.
 

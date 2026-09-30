@@ -63,6 +63,8 @@ fn run(args: &[&str]) -> Result<()> {
         _ => (None, args),
     };
     let root = data_root()?;
+    // SAGEBOX_HOME은 IPC 인증 경계의 일부다. 소켓을 연결하기 전에 루트부터 검증한다.
+    create_private_dir(&root)?;
     let cwd = std::env::current_dir()?;
     let (name, source, project) = namespace::resolve(flag, std::env::var("SAGEBOX_NS").ok(), &cwd)?;
     let ns = Ns {
@@ -71,6 +73,9 @@ fn run(args: &[&str]) -> Result<()> {
         source,
         project,
     };
+    if ns.name != namespace::DEFAULT {
+        create_private_dir(&root.join("ns"))?;
+    }
     create_private_dir(&ns.dir)?;
     let dir = &ns.dir;
     let vault = dir.join("vault");
@@ -193,13 +198,35 @@ fn data_root() -> Result<PathBuf> {
     })
 }
 
-/// 없으면 만든다. Unix는 중간 디렉터리까지 0700.
+/// 없으면 만들고, 기존 디렉터리도 현재 UID만 접근할 수 있는 실제 디렉터리인지 확인한다.
 pub(crate) fn create_private_dir(dir: &Path) -> Result<()> {
     let mut b = std::fs::DirBuilder::new();
     b.recursive(true);
     #[cfg(unix)]
     std::os::unix::fs::DirBuilderExt::mode(&mut b, 0o700);
     b.create(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let meta = std::fs::symlink_metadata(dir)?;
+        let mode = meta.permissions().mode() & 0o777;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err(
+                format!("{} must be a real directory, not a symlink", dir.display()).into(),
+            );
+        }
+        if meta.uid() != unsafe { libc::geteuid() } {
+            return Err(format!("{} must be owned by the current user", dir.display()).into());
+        }
+        if mode != 0o700 {
+            return Err(format!(
+                "{} must have mode 0700 (currently {mode:03o}); refusing an insecure sagebox data directory",
+                dir.display()
+            )
+            .into());
+        }
+    }
     Ok(())
 }
 
@@ -221,4 +248,25 @@ fn parse_profile_args(rest: &[&str]) -> Result<(BTreeMap<String, String>, Vec<St
         }
     }
     Ok((env, it.map(|s| s.to_string()).collect()))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::create_private_dir;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn private_data_dir_rejects_existing_insecure_permissions() {
+        let dir = std::env::temp_dir().join(format!("sbx-private-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        create_private_dir(&dir).unwrap();
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(create_private_dir(&dir).is_err());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

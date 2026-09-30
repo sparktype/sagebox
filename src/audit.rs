@@ -91,7 +91,23 @@ impl AuditLog {
         opts.append(true).create(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-        writeln!(opts.open(&self.path)?, "{entry}")?;
+        let file = opts.open(&self.path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+            let meta = file.metadata()?;
+            if !meta.is_file()
+                || meta.uid() != unsafe { libc::geteuid() }
+                || meta.permissions().mode() & 0o077 != 0
+            {
+                return Err(format!("unsafe audit log path {}", self.path.display()).into());
+            }
+        }
+        let mut file = file;
+        writeln!(file, "{entry}")?;
+        // exec 응답보다 먼저 기록을 안정 저장한다. 실패하면 호출자는 fail-closed 한다.
+        file.sync_data()?;
         // 쓰기에 성공한 뒤에만 체인을 전진시킨다.
         if let Some((seq, m)) = next {
             self.seq = seq;

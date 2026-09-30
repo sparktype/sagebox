@@ -3,7 +3,7 @@
 ## 1단계 — 볼트 (암호화 저장소)
 - [x] `src/vault.rs` 파일 형식 인코딩/디코딩 → verify: 라운드트립 테스트
 - [x] 잘못된 패스프레이즈·변조된 헤더·변조된 본문 거부 → verify: 실패 테스트
-- [x] 원자적 저장 (tmp + rename, 0600) → verify: 테스트
+- [x] 원자적 저장 (예측 불가능한 create_new tmp + rename + file/dir fsync, 0600) → verify: 테스트
 - [x] 봉투 형식 SBX2 (DEK + 패스프레이즈 슬롯, 모르는 슬롯 보존) → verify: 테스트 7개, linux·windows `cargo check`
 
 ## 2단계 — 관리 CLI
@@ -48,7 +48,7 @@
 
 ## 3.8단계 — 평문 MCP 설정 가져오기 (`sagebox import`)
 - [x] `src/import.rs`: `mcpServers` JSON 파싱, env 변수 분류(값 모양 + 이름 규칙, 애매하면 비밀), 명령 절대경로 고정
-- [x] 기본은 미리보기, `--apply`로 볼트(비밀·프로필)와 설정 파일을 원자적으로 바꾼다. `--keep VAR`, 값은 절대 출력하지 않는다
+- [x] 기본은 미리보기, `--apply`는 설정의 평문을 먼저 제거한 뒤 볼트(비밀·프로필)를 갱신하고 일반 오류에는 원문을 복구한다. `--keep VAR`, 값은 절대 출력하지 않는다
 - [x] 이미 sagebox로 관리 중인 서버와 비밀이 없는 서버는 건너뛴다. 이름 충돌은 쓰기 전에 전부 검사한다
 - [x] verify: 분류 단위 테스트, 미리보기→적용→exec 통합 테스트, 적용 후 설정 파일에 평문 없음
 - [ ] (보류, 2026-09-28 사용자 결정) `--assist`: 애매한 변수 **이름만** Jev로 판단. 재개 시 결정할 것: HTTP는 시스템 curl + stdin 헤더, API 키는 볼트에 보관
@@ -67,14 +67,14 @@
   - [x] verify: 사용자와 실기(enable → unlock 대화상자·설명 문구 → exec → 취소 시 패스프레이즈로 대체)
 - [ ] exec 알림 (알림 센터, 세션당 프로필별 1회)
 - [x] `sagebox mcp add <서버> [--env VAR=비밀]... [--scope local|user|project] -- <명령> [인자]` → 명령 절대경로 고정, 없는 비밀은 그 자리에서 입력, 프로필 생성, `claude mcp add` 실행(없으면 수동 안내), 설정 JSON 조각 출력 → verify: 가짜 claude로 인자 검증하는 통합 테스트
-- [ ] `.envrc` 가져오기 + direnv 연동
+- [x] `.envrc` 가져오기 + direnv 연동
   - [x] vault: `shell_env`(셸로 내보낼 VAR → 비밀) 필드, 기존 볼트 호환
   - [x] `src/envfile.rs`: `.envrc`/`.env` 파싱(`export K=V`, `K=V`, 따옴표), 리터럴이 아닌 값(`$`, 백틱)은 제외 → verify: 파싱 단위 테스트
-  - [x] `sagebox import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 이동, 첫 비밀 줄 자리에 `eval "$(sagebox env)"`, git 추적 경고, direnv allow 안내
+  - [x] `sagebox import-env <파일> [--keep VAR]... [--apply]`: 프로젝트 네임스페이스(디렉터리 이름 또는 기존 .sagebox), 없으면 init + Touch ID, `.sagebox`·trust, 비밀 줄 제거, git 추적 경고, direnv allow 안내
   - [x] ~~`sagebox env [--print]`~~ → 2026-09-28 삭제(`sagebox run`으로 대체)
   - [x] verify: 통합 테스트 `import_envrc`(미리보기 → 적용), 주입은 `run_needs_live_mcp_server`
 - [x] 이름 변경 sagevault(sgv) → sagebox(sagebox), 기존 `~/.sagevault` → `~/.sagebox` 이동
-- [x] `sagebox mcp serve`: 메타데이터 전용 stdio MCP 서버(status, list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
+- [x] `sagebox mcp serve`: 메타데이터 전용 stdio MCP 서버(list), 데몬 `List` 요청 → verify: `mcp_serve_lists_names_only`
 - [x] `sagebox run -- <명령>`: MCP 서버(Attach 임대)가 있을 때만 shell_env 주입 → verify: `run_needs_live_mcp_server`
 - [x] `sagebox zsh|bash`: cd 때 .envrc 평문 비밀을 묻고 정리 → verify: `hook_check_asks_before_cleaning_envrc`, 실제 zsh·bash에서 거절 후 재방문 시 다시 묻지 않음 확인
 - [x] `sagebox completion zsh|bash`: 명령·옵션·`--ns` 이름 자동완성, formula가 설치 → verify: `completion_scripts`, zsh·bash에서 가짜 compadd로 경우별 후보 확인
@@ -82,7 +82,7 @@
 
 ## 4단계 — 하드웨어 슬롯 (순차)
 - [x] 스파이크: 서명되지 않은 CLI에서 Secure Enclave 키 생성·ECDH·사용자 확인 → 가능 (3.9단계 참고)
-- [ ] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)
+- [x] `secure_enclave` 슬롯 (macOS, `cfg(target_os = "macos")`)
 - [ ] FIDO2 `hmac-secret` 또는 TPM2 슬롯 검토 (Linux)
 
 ## 나중에 — Windows

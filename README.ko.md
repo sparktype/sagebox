@@ -307,6 +307,7 @@ cargo check --all-targets --target x86_64-pc-windows-msvc
 `SAGEBOX_HOME`을 바꾸면 임시 폴더를 금고 위치로 씁니다.
 
 ```sh
+mkdir -m 700 /tmp/sbx-play
 export SAGEBOX_HOME=/tmp/sbx-play
 export SAGEBOX_NO_GUI=1          # GUI 창 대신 터미널에서 묻기
 export SAGEBOX_DEBUG=1           # 판단 과정을 stderr와 debug.log에 기록
@@ -314,6 +315,8 @@ export SAGEBOX_DEBUG=1           # 판단 과정을 stderr와 debug.log에 기�
 ./target/debug/sagebox init
 printf 'mypassword\nsecret-value\n' | ./target/debug/sagebox set demo
 ```
+
+`SAGEBOX_HOME`은 본인 소유의 실제 디렉터리이고 권한이 `0700`이어야 합니다. sagebox는 로컬 소켓 노출을 막기 위해 symlink와 느슨한 기존 디렉터리를 거부합니다.
 
 터미널이 아닌 곳(파이프)에서 실행하면, 패스프레이즈와 값을 **stdin에서 한 줄씩 순서대로** 읽습니다. 테스트도 이 방식을 씁니다.
 

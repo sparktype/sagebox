@@ -161,6 +161,45 @@ fn plan(config: &Value, keep: &[&str], sagebox: &Path) -> Result<(Vec<Plan>, Vec
     Ok((plans, skipped))
 }
 
+/// 설정에서 평문 env를 먼저 지운다. 이후 볼트 저장이 실패하거나 프로세스가 죽어도
+/// 설정 파일에 비밀이 남는 것보다, 프로필이 잠시 동작하지 않는 쪽을 택한다.
+fn rewrite_config(
+    file: &Path,
+    config: &mut Value,
+    plans: &[Plan],
+    ns_args: &[String],
+    sagebox: &Path,
+    written: &mut bool,
+) -> Result<()> {
+    for p in plans {
+        let def = &mut config["mcpServers"][&p.server];
+        let mut args = ns_args.to_vec();
+        args.extend(["exec".to_string(), p.server.clone()]);
+        def["command"] = json!(sagebox.display().to_string());
+        def["args"] = json!(args);
+        if let Some(env) = def["env"].as_object_mut() {
+            for (var, _, _) in &p.moved {
+                env.remove(var);
+            }
+            if env.is_empty() {
+                def.as_object_mut().map(|o| o.remove("env"));
+            }
+        }
+    }
+    let perms = std::fs::metadata(file)?.permissions();
+    let out = Zeroizing::new(serde_json::to_string_pretty(config)? + "\n");
+    vault::write_atomic(file, out.as_bytes())?;
+    *written = true;
+    std::fs::set_permissions(file, perms)?;
+    Ok(())
+}
+
+fn restore_config(file: &Path, original: &str, perms: std::fs::Permissions) -> Result<()> {
+    vault::write_atomic(file, original.as_bytes())?;
+    std::fs::set_permissions(file, perms)?;
+    Ok(())
+}
+
 /// 기본은 미리보기. apply면 볼트와 설정 파일을 바꾼다. ns_args는 exec에 붙일 `--ns <이름>`.
 pub fn run(
     vault_path: &Path,
@@ -202,7 +241,10 @@ pub fn run(
         return Ok(());
     }
 
-    admin::edit(vault_path, |v| {
+    let original = text.clone();
+    let original_perms = std::fs::metadata(file)?.permissions();
+    let mut config_written = false;
+    let edit_result = admin::edit(vault_path, |v| {
         // 쓰기 전에 충돌부터 전부 확인한다.
         for p in &plans {
             if v.profiles.contains_key(&p.server) {
@@ -235,28 +277,27 @@ pub fn run(
                 },
             );
         }
+        // 볼트 파일을 바꾸기 전에 설정을 안전한 상태로 만든다. 정상 오류면 아래에서 원본으로
+        // 되돌리고, 전원 손실이면 설정만 안전하게 남아 평문 비밀은 재노출되지 않는다.
+        rewrite_config(
+            file,
+            &mut config,
+            &plans,
+            ns_args,
+            &sagebox,
+            &mut config_written,
+        )?;
         Ok(())
-    })?;
-
-    for p in &plans {
-        let def = &mut config["mcpServers"][&p.server];
-        let mut args = ns_args.to_vec();
-        args.extend(["exec".to_string(), p.server.clone()]);
-        def["command"] = json!(sagebox.display().to_string());
-        def["args"] = json!(args);
-        if let Some(env) = def["env"].as_object_mut() {
-            for (var, _, _) in &p.moved {
-                env.remove(var);
-            }
-            if env.is_empty() {
-                def.as_object_mut().map(|o| o.remove("env"));
-            }
+    });
+    if let Err(e) = edit_result {
+        if config_written && let Err(restore) = restore_config(file, &original, original_perms) {
+            return Err(format!(
+                "{e}; also failed to restore the original MCP configuration: {restore}"
+            )
+            .into());
         }
+        return Err(e);
     }
-    let perms = std::fs::metadata(file)?.permissions();
-    let out = Zeroizing::new(serde_json::to_string_pretty(&config)? + "\n");
-    vault::write_atomic(file, out.as_bytes())?;
-    std::fs::set_permissions(file, perms)?;
     let n: usize = plans.iter().map(|p| p.moved.len()).sum();
     println!(
         "imported {n} secrets and rewrote {}. The old plaintext values may still exist in git history, backups or shell history: rotate them.",

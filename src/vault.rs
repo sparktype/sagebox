@@ -1,7 +1,10 @@
 // 비밀과 프로필을 봉투 암호화(무작위 DEK + 키 슬롯)로 저장하는 볼트 파일 형식
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
 
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -327,17 +330,52 @@ pub fn open(file: &[u8], dek: &Dek) -> Result<(Header, Vault)> {
     Ok((header, serde_json::from_slice(&plain)?))
 }
 
-/// 같은 디렉터리의 임시 파일(Unix는 0600)에 쓰고 rename해 원자적으로 교체한다.
+/// 같은 디렉터리에 예측 불가능한 0600 임시 파일을 만든다. `create_new`라 symlink를 따르지 않는다.
+fn create_temp(path: &Path) -> Result<(PathBuf, File)> {
+    let parent = path.parent().ok_or("path has no parent directory")?;
+    let name = path
+        .file_name()
+        .ok_or("path has no filename")?
+        .to_string_lossy();
+    for _ in 0..16 {
+        let suffix = random::<8>()?
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let tmp = parent.join(format!(".{name}.{suffix}.tmp"));
+        let mut opts = OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        opts.mode(0o600);
+        match opts.open(&tmp) {
+            Ok(file) => return Ok((tmp, file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err("could not create a unique temporary file".into())
+}
+
+/// 같은 디렉터리의 0600 임시 파일에 동기화해 쓰고 rename한다. Unix는 부모 디렉터리도
+/// 동기화해 전원 손실 뒤의 rename을 내구적으로 만든다.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("tmp");
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    let (tmp, mut file) = create_temp(path)?;
+    let write_result = (|| -> Result<()> {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        Ok(())
+    })();
+    drop(file);
+    if let Err(e) = write_result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    if let Err(e) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
     #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-    let mut f = opts.open(&tmp)?;
-    f.write_all(bytes)?;
-    f.sync_all()?;
-    std::fs::rename(&tmp, path)?;
+    File::open(path.parent().ok_or("path has no parent directory")?)?.sync_all()?;
     Ok(())
 }
 
@@ -520,6 +558,19 @@ mod tests {
             std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
             0o600
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn atomic_write_does_not_reuse_predictable_temp_name() {
+        let dir = std::env::temp_dir().join(format!("sbx-temp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("vault");
+        let old_temp = path.with_extension("tmp");
+        std::fs::write(&old_temp, b"keep").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(std::fs::read(&old_temp).unwrap(), b"keep");
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

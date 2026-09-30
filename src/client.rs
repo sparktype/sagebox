@@ -14,7 +14,7 @@ use crate::vault::Result;
 /// 데몬에 연결한다. autostart면 없을 때 띄우고 소켓이 생길 때까지 기다린다.
 fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
     let sock = ns.dir.join("sock");
-    if let Ok(s) = UnixStream::connect(&sock) {
+    if let Some(s) = crate::daemon::connect_checked(&sock)? {
         return Ok(Some(s));
     }
     if !autostart {
@@ -36,7 +36,7 @@ fn connect(ns: &Ns, autostart: bool) -> Result<Option<UnixStream>> {
     spawn_daemon(&ns.name)?;
     for _ in 0..100 {
         std::thread::sleep(Duration::from_millis(20));
-        if let Ok(s) = UnixStream::connect(&sock) {
+        if let Some(s) = crate::daemon::connect_checked(&sock)? {
             return Ok(Some(s));
         }
     }
@@ -51,6 +51,10 @@ fn spawn_daemon(ns: &str) -> Result<()> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    // 데몬 초기화(to_file 이전) 실패는 평소 숨기되, 디버그 때는 자동 기동 원인을 볼 수 있게 한다.
+    if crate::debug::enabled() {
+        cmd.stderr(Stdio::inherit());
+    }
     // SAFETY: fork 이후 자식에서는 async-signal-safe 함수(fork, setsid, _exit)만 호출한다.
     unsafe {
         cmd.pre_exec(|| match libc::fork() {

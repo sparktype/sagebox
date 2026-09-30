@@ -1,5 +1,11 @@
 // 데몬을 거치지 않고 패스프레이즈로 볼트 파일을 직접 편집하는 관리 명령
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 use std::io::{BufRead, IsTerminal};
+#[cfg(unix)]
+use std::os::fd::AsRawFd;
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use zeroize::Zeroizing;
@@ -54,12 +60,42 @@ fn unlock(path: &Path) -> Result<(Header, Vault, Dek)> {
     Ok((header, vault, dek))
 }
 
+/// 볼트의 read-modify-write를 직렬화한다. 잠금 파일은 같은 0700 데이터 디렉터리에만 둔다.
+#[cfg(unix)]
+pub(crate) fn with_vault_lock<T>(path: &Path, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    let name = path
+        .file_name()
+        .ok_or("vault has no filename")?
+        .to_string_lossy();
+    let lock_path = path.with_file_name(format!(".{name}.lock"));
+    let mut opts = OpenOptions::new();
+    opts.read(true).write(true).create(true).mode(0o600);
+    let file = opts.open(lock_path)?;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    struct Unlock(File);
+    impl Drop for Unlock {
+        fn drop(&mut self) {
+            let _ = unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+    let _unlock = Unlock(file);
+    f()
+}
+
+#[cfg(not(unix))]
+pub(crate) fn with_vault_lock<T>(_: &Path, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    f()
+}
+
 /// 볼트를 열어 f로 고친 뒤 같은 슬롯으로 다시 저장한다.
-// ponytail: 동시에 두 관리 명령이 돌면 나중에 쓴 쪽이 이긴다. 필요해지면 파일 잠금 추가
 pub(crate) fn edit(path: &Path, f: impl FnOnce(&mut Vault) -> Result<()>) -> Result<()> {
-    let (header, mut vault, dek) = unlock(path)?;
-    f(&mut vault)?;
-    vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
+    with_vault_lock(path, || {
+        let (header, mut vault, dek) = unlock(path)?;
+        f(&mut vault)?;
+        vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
+    })
 }
 
 /// 패스프레이즈로 열어 헤더(키 슬롯)를 고친 뒤 다시 저장한다. 본문은 그대로다.
@@ -68,9 +104,11 @@ pub(crate) fn edit_header(
     path: &Path,
     f: impl FnOnce(&mut Header, &Dek) -> Result<()>,
 ) -> Result<()> {
-    let (mut header, vault, dek) = unlock(path)?;
-    f(&mut header, &dek)?;
-    vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
+    with_vault_lock(path, || {
+        let (mut header, vault, dek) = unlock(path)?;
+        f(&mut header, &dek)?;
+        vault::write_atomic(path, &vault::seal(&header, &vault, &dek)?)
+    })
 }
 
 /// 새 패스프레이즈를 두 번 입력받아 확인한다.
@@ -86,12 +124,14 @@ pub(crate) fn read_new_passphrase() -> Result<Zeroizing<String>> {
 }
 
 pub fn init(path: &Path) -> Result<()> {
-    if path.exists() {
-        return Err(format!("{} already exists", path.display()).into());
-    }
-    let pass = read_new_passphrase()?;
-    let (file, _) = vault::create(&Vault::default(), pass.as_bytes(), vault::DEFAULT_KDF)?;
-    vault::write_atomic(path, &file)
+    with_vault_lock(path, || {
+        if path.exists() {
+            return Err(format!("{} already exists", path.display()).into());
+        }
+        let pass = read_new_passphrase()?;
+        let (file, _) = vault::create(&Vault::default(), pass.as_bytes(), vault::DEFAULT_KDF)?;
+        vault::write_atomic(path, &file)
+    })
 }
 
 /// expires가 없으면 기존 만료일을 지운다(새 값은 대개 새 토큰이기 때문이다).

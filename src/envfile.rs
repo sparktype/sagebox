@@ -152,6 +152,8 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
         return Ok(());
     }
 
+    let original = text.clone();
+    let original_perms = std::fs::metadata(&file)?.permissions();
     let fill = |v: &mut Vault| -> Result<()> {
         for m in &moved {
             if v.shell_env.contains_key(&m.var) {
@@ -166,21 +168,60 @@ pub fn import(root: &Path, file: &Path, keep: &[&str], apply: bool) -> Result<()
         v.trusted.insert(project.display().to_string());
         Ok(())
     };
+    if ns != namespace::DEFAULT {
+        crate::create_private_dir(&root.join("ns"))?;
+    }
     crate::create_private_dir(vault_path.parent().ok_or("no namespace dir")?)?;
-    if new_ns {
-        let pass = admin::read_new_passphrase()?;
-        let mut v = Vault::default();
-        fill(&mut v)?;
-        let (bytes, dek) = vault::create(&v, pass.as_bytes(), vault::DEFAULT_KDF)?;
-        let bytes = with_touchid(bytes, &v, &dek);
-        vault::write_atomic(&vault_path, &bytes)?;
+    let mut source_written = false;
+    let mut marker_created = false;
+    let import_result = if new_ns {
+        admin::with_vault_lock(&vault_path, || {
+            if vault_path.exists() {
+                return Err(format!(
+                    "{} was created concurrently; retry the import",
+                    vault_path.display()
+                )
+                .into());
+            }
+            let pass = admin::read_new_passphrase()?;
+            let mut v = Vault::default();
+            fill(&mut v)?;
+            if !has_marker {
+                vault::write_atomic(&marker, format!("namespace = \"{ns}\"\n").as_bytes())?;
+                marker_created = true;
+            }
+            // `.envrc`에서 먼저 평문을 없앤다. 뒤의 볼트 저장이 전원 손실로 끝나도
+            // 평문 비밀이 다시 노출되는 것보다, 설정이 잠시 동작하지 않는 쪽을 택한다.
+            rewrite(&file, &lines, &moved, &mut source_written)?;
+            let (bytes, dek) = vault::create(&v, pass.as_bytes(), vault::DEFAULT_KDF)?;
+            let bytes = with_touchid(bytes, &v, &dek);
+            vault::write_atomic(&vault_path, &bytes)
+        })
     } else {
-        admin::edit(&vault_path, fill)?;
+        admin::edit(&vault_path, |v| {
+            fill(v)?;
+            rewrite(&file, &lines, &moved, &mut source_written)
+        })
+    };
+    if let Err(e) = import_result {
+        if source_written {
+            let restore = || -> Result<()> {
+                vault::write_atomic(&file, original.as_bytes())?;
+                std::fs::set_permissions(&file, original_perms)?;
+                Ok(())
+            };
+            if let Err(restore) = restore() {
+                return Err(format!(
+                    "{e}; also failed to restore the original environment file: {restore}"
+                )
+                .into());
+            }
+        }
+        if marker_created {
+            let _ = std::fs::remove_file(&marker);
+        }
+        return Err(e);
     }
-    if !has_marker {
-        std::fs::write(&marker, format!("namespace = \"{ns}\"\n"))?;
-    }
-    rewrite(&file, &lines, &moved)?;
 
     println!(
         "moved {} secrets into namespace {ns} and rewrote {}.",
@@ -286,7 +327,7 @@ fn with_touchid(bytes: Vec<u8>, _: &Vault, _: &vault::Dek) -> Vec<u8> {
 }
 
 /// 비밀 줄만 뺀다. 비밀은 `sagebox run`이 넣는다. 파일 권한은 유지한다.
-fn rewrite(file: &Path, lines: &[&str], moved: &[Moved]) -> Result<()> {
+fn rewrite(file: &Path, lines: &[&str], moved: &[Moved], written: &mut bool) -> Result<()> {
     let mut out = String::new();
     for (i, line) in lines.iter().enumerate() {
         if !moved.iter().any(|m| m.index == i) {
@@ -296,6 +337,7 @@ fn rewrite(file: &Path, lines: &[&str], moved: &[Moved]) -> Result<()> {
     }
     let perms = std::fs::metadata(file)?.permissions();
     vault::write_atomic(file, out.as_bytes())?;
+    *written = true;
     std::fs::set_permissions(file, perms)?;
     Ok(())
 }

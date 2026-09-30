@@ -71,3 +71,8 @@
 - 2026-09-28 자동완성은 정적 스크립트(`sagebox completion zsh|bash`)로 한다. 비밀·프로필 이름은 금고를 열어야 알 수 있어 넣지 않는다(Tab마다 패스프레이즈를 물을 수 없다). formula가 `generate_completions_from_executable`로 설치한다.
   - brew 소스 빌드의 부작용: 빌드 의존성 `rust`(+`llvm@22`, 약 2GB)가 `/opt/homebrew/bin/cargo`로 rustup보다 앞에 잡혀 크로스 컴파일 타깃이 사라진다. 다른 설치 formula가 rust를 빌드 의존성으로 선언해 `brew autoremove`로는 안 지워진다. 설치·업그레이드 뒤 `brew uninstall rust llvm@22`로 지운다(README에 안내). 매번 번거로우면 미리 빌드한 바이너리 배포로 바꾸는 것이 해법이다.
 - 2026-09-28 불필요 기능 정리(사용자 승인): `sagebox env`/`--print`, CLI `profile add`, sagebox MCP의 `status` 도구, `unlock --passphrase`를 지웠다. `env`는 `run`으로 대체돼 남은 쓰임이 "셸 전체에 비밀 올리기"뿐이었고, `profile add`는 `mcp add`의 불편한 부분집합, `status` 도구는 `list`가 잠김도 알려 줘서 겹쳤고, `--passphrase`는 Touch ID 취소·실패 시 이미 패스프레이즈로 넘어가 쓸 일이 없었다. bash 지원과 Linux GUI 프롬프트는 공개 배포 대상이라 남겼다.
+
+## 2026-09-30
+- `SAGEBOX_HOME`은 단순한 편의 경로가 아니라 IPC 인증 경계다. 기존 디렉터리도 현재 UID 소유·실제 디렉터리·0700인지 확인하고, 클라이언트는 UID·타입·권한이 맞지 않는 소켓에 연결하지 않는다. 느슨한 디렉터리에 미리 만든 가짜 소켓으로 passphrase나 Touch ID로 푼 DEK가 넘어가는 위험을 막기 위함이다.
+- 데몬 자동 기동과 관리 명령의 경쟁을 각각 flock으로 직렬화했다. 데몬 잠금은 bind와 0600 설정 뒤 바로 풀어, 뒤따른 기동 요청이 살아 있는 소켓을 확인하고 끝나게 한다.
+- 서로 다른 파일인 vault와 설정 파일은 단일 rename으로 원자화할 수 없다. 가져오기는 평문 설정을 먼저 안전하게 갱신하고 정상 오류에는 원문을 복원한다. 전원 손실 때는 비밀 재노출보다 일시적 설정 불능을 택하는 fail-closed 순서다.

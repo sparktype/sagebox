@@ -1,8 +1,9 @@
 // 세션 키(DEK)를 보관하고, exec로 띄운 MCP 서버들의 임대가 모두 끝나면 스스로 종료하는 데몬
 use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -105,6 +106,57 @@ pub fn recv<T: DeserializeOwned>(s: &mut UnixStream) -> Result<T> {
     let mut buf = Zeroizing::new(vec![0u8; len]);
     s.read_exact(&mut buf)?;
     Ok(serde_json::from_slice(&buf)?)
+}
+
+/// 다른 UID가 만든 소켓에는 절대 연결하지 않는다. 데이터 디렉터리 권한이 과거에 느슨했던
+/// 경우에도 가짜 데몬이 패스프레이즈나 DEK를 받는 일을 막는다.
+pub(crate) fn connect_checked(sock: &Path) -> Result<Option<UnixStream>> {
+    match std::fs::symlink_metadata(sock) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e.into()),
+        Ok(meta) => {
+            let mode = meta.permissions().mode() & 0o777;
+            if meta.file_type().is_symlink()
+                || !meta.file_type().is_socket()
+                || meta.uid() != unsafe { libc::geteuid() }
+                || mode & 0o077 != 0
+            {
+                return Err(format!(
+                    "refusing unsafe daemon socket {} (remove it only after checking its owner and permissions)",
+                    sock.display()
+                )
+                .into());
+            }
+        }
+    }
+    match UnixStream::connect(sock) {
+        Ok(s) => Ok(Some(s)),
+        // 안전한 소켓이지만 리스너가 없으면 stale socket이다. 기동 잠금을 잡은 쪽이 지운다.
+        Err(_) => Ok(None),
+    }
+}
+
+/// 자동 기동을 직렬화한다. 두 클라이언트가 동시에 stale socket을 지우면 데몬이 둘 생기고
+/// 감사 MAC 체인이 갈라질 수 있다.
+struct StartupLock(File);
+
+impl StartupLock {
+    fn acquire(dir: &Path) -> Result<Self> {
+        let path = dir.join(".daemon.lock");
+        let mut opts = OpenOptions::new();
+        opts.read(true).write(true).create(true).mode(0o600);
+        let file = opts.open(path)?;
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
+        Ok(Self(file))
+    }
+}
+
+impl Drop for StartupLock {
+    fn drop(&mut self) {
+        let _ = unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
 }
 
 struct Session {
@@ -210,14 +262,17 @@ struct Daemon {
 
 pub fn serve(dir: &Path) -> Result<()> {
     let sock = dir.join("sock");
-    if UnixStream::connect(&sock).is_ok() {
+    let startup = StartupLock::acquire(dir).map_err(|e| format!("daemon startup lock: {e}"))?;
+    if connect_checked(&sock)?.is_some() {
         return Err("daemon already running".into());
     }
-    // ponytail: 두 클라이언트가 동시에 데몬을 띄우면 늦게 bind한 쪽이 소켓을 가져가고,
-    // 먼저 뜬 쪽은 요청을 못 받은 채 LOCKED_IDLE 뒤 종료한다. 문제되면 flock으로 직렬화
+    // StartupLock을 잡은 뒤에만 안전한 stale socket을 없앤다.
     let _ = std::fs::remove_file(&sock);
-    let listener = UnixListener::bind(&sock)?;
-    std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))?;
+    let listener =
+        UnixListener::bind(&sock).map_err(|e| format!("bind {}: {e}", sock.display()))?;
+    std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("set permissions on {}: {e}", sock.display()))?;
+    drop(startup);
     crate::debug::to_file(&dir.join("debug.log"));
     // 개발·디버깅용: 화면을 잠근 채 에이전트를 돌릴 때 등
     let autolock = !crate::debug::flag("SAGEBOX_NO_AUTOLOCK");
@@ -593,5 +648,14 @@ mod tests {
         assert!(slept(10 * MIN, 5 * SEC));
         // NTP 보정 정도의 차이는 무시
         assert!(!slept(15 * SEC, 5 * SEC));
+    }
+
+    #[test]
+    fn unsafe_socket_path_is_rejected() {
+        let path = std::env::temp_dir().join(format!("sbx-sock-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "not a socket").unwrap();
+        assert!(connect_checked(&path).is_err());
+        std::fs::remove_file(path).unwrap();
     }
 }
